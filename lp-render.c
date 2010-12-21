@@ -1,4 +1,8 @@
+#ifdef __APPLE__
 #include <OpenGL/OpenGL.h>
+#else
+#include <GL/glew.h>
+#endif
 
 void draw(int w, int h)
 {

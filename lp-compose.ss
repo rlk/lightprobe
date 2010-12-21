@@ -32,7 +32,8 @@
     (class canvas%
       (inherit refresh with-gl-context swap-gl-buffers)
       
-      (define lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
+;     (define lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
+      (define lib (ffi-lib "/home/rlk/Projects/lightprobe/lp-render"))
 
       (define draw (get-ffi-obj "draw" lib (_fun _int _int -> _void)))
   
