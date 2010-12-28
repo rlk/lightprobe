@@ -4,6 +4,10 @@
 #include <GL/glew.h>
 #endif
 
+#include "lp-render.h"
+
+/*----------------------------------------------------------------------------*/
+
 void draw(int w, int h)
 {
     GLdouble x = (GLdouble) w / (GLdouble) h;
