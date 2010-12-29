@@ -15,13 +15,35 @@
 (module lp-compose racket/gui
   
   (require ffi/unsafe)
-  (require sgl)
 
   ;;----------------------------------------------------------------------------
 
-;;(define lp-lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
+  (define lp-lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
 
-;;(define draw (get-ffi-obj "draw" lp-lib (_fun _int _int -> _void)))
+  (define lp-init
+    (get-ffi-obj "lp_init"          lp-lib (_fun                -> _pointer)))
+  (define lp-open
+    (get-ffi-obj "lp_open"          lp-lib (_fun          _path -> _pointer)))
+  (define lp-save
+    (get-ffi-obj "lp_save"          lp-lib (_fun _pointer _path -> _bool)))
+  (define lp-free
+    (get-ffi-obj "lp_free"          lp-lib (_fun _pointer       -> _void)))
+  (define lp-export-cube
+    (get-ffi-obj "lp_export_cube"   lp-lib (_fun _pointer _path -> _bool)))
+  (define lp-export-sphere
+    (get-ffi-obj "lp_export_sphere" lp-lib (_fun _pointer _path -> _bool)))
+
+  (define lp-render-circle
+    (get-ffi-obj "lp_render_circle" lp-lib
+      (_fun _pointer _int _int _int _float _float _float _float -> _void)))
+  (define lp-render-sphere
+    (get-ffi-obj "lp_render_sphere" lp-lib
+      (_fun _pointer _int _int _int _float _float _float _float -> _void)))
+
+  ;;----------------------------------------------------------------------------
+
+  (define lightprobe      (lp-init))
+  (define lightprobe-path (string->path "Untitled"))
 
   ;;----------------------------------------------------------------------------
   ;; The Apple HIG defines a preferences panel with all radio and check boxes
@@ -218,15 +240,56 @@
     (class menu-bar%
       (super-new)
 
-      ; Menu callbacks
+      ; File state handlers
 
-      (define (do-new     control event) (printf "New~n"))
-      (define (do-open    control event) (printf "Open~n"))
-      (define (do-save    control event) (printf "Save~n"))
-      (define (do-save-as control event) (printf "Save As...~n"))
+      (define (new! new-lightprobe new-lightprobe-path)
+        (if new-lightprobe (begin
+                             (lp-free lightprobe)
+                             (set! lightprobe
+                               new-lightprobe)
+                             (set! lightprobe-path
+                               new-lightprobe-path) #t) #f))
 
-      (define (do-export-cube   control event) (printf "Export Cube Map~n"))
-      (define (do-export-sphere control event) (printf "Export Sphere Map~n"))
+      (define (save! new-lightprobe-path)
+        (set! lightprobe-path
+          new-lightprobe-path)
+        (lp-save lightprobe lightprobe-path))
+
+      ; File / New
+
+      (define (do-new control event)
+        (new! (lp-init) (string->path "Untitled")))
+
+      ; File / Open
+
+      (define (do-open control event)
+        (let ((path (get-file)))
+          (if path
+            (new! (lp-open path) path) #f)))
+
+      ; File Save
+
+      (define (do-save control event)
+        (save! lightprobe-path))
+
+      ; File / Save As...
+
+      (define (do-save-as control event)
+        (let ((path (put-file)))
+          (if path
+            (save! path) #f)))
+
+      ; File / Export Cube...
+
+      (define (do-export-cube control event)
+        (let ((path (put-file)))
+          (if path (lp-export-cube lightprobe path) #f)))
+
+      ; File / Export Sphere...
+
+      (define (do-export-sphere control event)
+        (let ((path (put-file)))
+          (if path (lp-export-sphere lightprobe path) #f)))
 
       ; Menus and menu items.
 
@@ -274,8 +337,10 @@
       (define/override (on-paint)
         (with-gl-context
          (lambda ()
-           (gl-clear 'color-buffer-bit)
-           (swap-gl-buffers))))
+           (let ((w (send this get-width))
+                 (h (send this get-height)))
+             (lp-render-sphere #f 0 w h 0.0 0.0 0.0 0.0)
+             (swap-gl-buffers)))))
       
       (super-new (style '(gl hscroll vscroll)))))
 

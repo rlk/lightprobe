@@ -20,14 +20,14 @@ typedef struct lightprobe lightprobe;
 /*----------------------------------------------------------------------------*/
 
 lightprobe *lp_init();
-void        lp_free(lightprobe *lp); 
-void        lp_open(lightprobe *lp, const char *path); 
-void        lp_save(lightprobe *lp, const char *path); 
+lightprobe *lp_open(const char *path);
+int         lp_save(lightprobe *lp, const char *path);
+void        lp_free(lightprobe *lp);
 
 /*----------------------------------------------------------------------------*/
 
-void lp_export_cube  (lightprobe *lp, const char *path);
-void lp_export_sphere(lightprobe *lp, const char *path);
+int lp_export_cube  (lightprobe *lp, const char *path);
+int lp_export_sphere(lightprobe *lp, const char *path);
 
 /*----------------------------------------------------------------------------*/
 
@@ -38,7 +38,7 @@ void lp_remove_image(lightprobe *lp, const char *path);
 #define LP_IMAGE_ACTIVE  1
 #define LP_IMAGE_HIDDEN  2
 
-void lp_set_image_flags(lightprobe *lp, const char *path);
+void lp_set_image_flags(lightprobe *lp, const char *path, int f);
 int  lp_get_image_flags(lightprobe *lp, const char *path);
 
 /*----------------------------------------------------------------------------*/
