@@ -1,6 +1,6 @@
-#!/Users/rlk/Applications/racket/bin/racket
+#!/Users/rlk/Build/racket/bin/racket
 
-;;;; LIGHTPROBE Copyright (C) 2010 Robert Kooima
+;;;; LIGHTPROBE COMPOSER Copyright (C) 2010 Robert Kooima
 ;;;;
 ;;;; This program is free software: you can redistribute it and/or modify it
 ;;;; under the terms of the GNU General Public License as published by the Free
@@ -14,9 +14,13 @@
 
 (module lp-compose racket/gui
   
-  (require ffi/unsafe)
-
   ;;----------------------------------------------------------------------------
+  ;; Rendering and image processing are performed by the graphics hardware via
+  ;; the OpenGL Shading Language. This is managed by the lightprobe library, a
+  ;; dynamically-loaded native code module written in C. The following FFI
+  ;; binds that library API.
+
+  (require ffi/unsafe)
 
   (define lp-lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
 
@@ -32,6 +36,25 @@
     (get-ffi-obj "lp_export_cube"   lp-lib (_fun _pointer _path -> _bool)))
   (define lp-export-sphere
     (get-ffi-obj "lp_export_sphere" lp-lib (_fun _pointer _path -> _bool)))
+
+  (define lp-append-image
+    (get-ffi-obj "lp_append_image"  lp-lib (_fun _pointer _path -> _void)))
+  (define lp-remove-image
+    (get-ffi-obj "lp_remove_image"  lp-lib (_fun _pointer _path -> _void)))
+
+  (define lp-set-image-flags
+    (get-ffi-obj "lp_set_image_flags" lp-lib
+      (_fun _pointer _path _int -> _void)))
+  (define lp-get-image-flags
+    (get-ffi-obj "lp_get_image_flags" lp-lib
+      (_fun _pointer _path      -> _int)))
+
+  (define lp-move-circle
+    (get-ffi-obj "lp_move_circle" lp-lib
+      (_fun _pointer _float _float _float -> _void)))
+  (define lp-move-sphere
+    (get-ffi-obj "lp_move_sphere" lp-lib
+      (_fun _pointer _float _float _float -> _void)))
 
   (define lp-render-circle
     (get-ffi-obj "lp_render_circle" lp-lib
@@ -165,16 +188,16 @@
       (define grid  (new check-box%     [parent group]
                                         [callback set]
                                         [label "Show Grid"]))
-      (define tone  (new check-box%     [parent group]
+      (define res   (new check-box%     [parent group]
                                         [callback set]
-                                        [label "Tone-Map"]))
+                                        [label "Show Resolution"]))
 
       ; Public interface
 
-      (define/public (set-grid b)     (send grid set-value b))
-      (define/public (get-grid)       (send grid get-value))
-      (define/public (set-tone-map b) (send tone set-value b))
-      (define/public (get-tone-map)   (send tone get-value))))
+      (define/public (set-grid b) (send grid set-value b))
+      (define/public (get-grid)   (send grid get-value))
+      (define/public (set-res b)  (send res  set-value b))
+      (define/public (get-res)    (send res  get-value))))
 
   ;;----------------------------------------------------------------------------
   ;; The image-list manages the set of lightprobe images input to the composer.
@@ -242,42 +265,42 @@
 
       ; File state handlers
 
-      (define (new! new-lightprobe new-lightprobe-path)
-        (if new-lightprobe (begin
-                             (lp-free lightprobe)
-                             (set! lightprobe
-                               new-lightprobe)
-                             (set! lightprobe-path
-                               new-lightprobe-path) #t) #f))
+      (define (set-lightprobe-path! path)
+        (set! lightprobe-path path)
+        (send (send this get-frame) set-label (path->string path)))
 
-      (define (save! new-lightprobe-path)
-        (set! lightprobe-path
-          new-lightprobe-path)
-        (lp-save lightprobe lightprobe-path))
+      (define (set-lightprobe! new path)
+        (if new (begin (lp-free new)
+                       (set-lightprobe-path! path)
+                       (set! lightprobe new) #t) #f))
+
+      (define (save path)
+        (set-lightprobe-path! path)
+        (lp-save lightprobe   path))
 
       ; File / New
 
       (define (do-new control event)
-        (new! (lp-init) (string->path "Untitled")))
+        (set-lightprobe! (lp-init) (string->path "Untitled")))
 
       ; File / Open
 
       (define (do-open control event)
         (let ((path (get-file)))
           (if path
-            (new! (lp-open path) path) #f)))
+            (set-lightprobe! (lp-open path) path) #f)))
 
       ; File Save
 
       (define (do-save control event)
-        (save! lightprobe-path))
+        (save lightprobe-path))
 
       ; File / Save As...
 
       (define (do-save-as control event)
         (let ((path (put-file)))
           (if path
-            (save! path) #f)))
+            (save path) #f)))
 
       ; File / Export Cube...
 

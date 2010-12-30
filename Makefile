@@ -1,14 +1,14 @@
 CFLAGS= -Wall
-LIBS=
+LIBS= -ltiff
 
 ifeq ($(shell uname), Darwin)
-	CFLAGS += -m32
 	SHARED  = -dynamiclib
-        LIBS   += -framework OpenGL
+	CFLAGS += -I/opt/local/include
+        LIBS   += -L/opt/local/lib -framework OpenGL
 	TARG    = lp-render.dylib
 else
-	CFLAGS += -fPIC
 	SHARED  = -shared
+	CFLAGS += -fPIC
 	LIBS   += -lGLEW -lGL
 	TARG    = lp-render.so
 endif
