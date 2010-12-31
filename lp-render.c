@@ -14,12 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tiffio.h>
-
-#ifdef __APPLE__
-#include <OpenGL/OpenGL.h>
-#else
 #include <GL/glew.h>
-#endif
 
 #include "lp-render.h"
 
@@ -49,8 +44,11 @@ typedef struct image image;
 
 struct lightprobe
 {
-    struct image *first;
-    struct image *last;
+    GLuint circle_program;
+    GLuint sphere_program;
+
+    image *first;
+    image *last;
 };
 
 /*----------------------------------------------------------------------------*/
@@ -77,13 +75,11 @@ static void *tifread(const char *path, int *w, int *h)
         {
             if ((p = malloc(H * s)))
             {         
-                for (i = 0; i < *h; ++i)
+                for (i = 0; i < H; ++i)
                     TIFFReadScanline(T, (uint8 *) p + i * s, i, 0);
                     
                 *w = (int) W;
                 *h = (int) H;
-
-                printf("read %s %d %d\n", path, *w, *h);
             }
         }
         TIFFClose(T);
@@ -153,6 +149,146 @@ static GLuint load_image(const char *path, int *w, int *h)
 
 /*----------------------------------------------------------------------------*/
 
+static char *load_txt(const char *name)
+{
+    /* Load the named file into a newly-allocated buffer. */
+
+    FILE *fp = 0;
+    void  *p = 0;
+    size_t n = 0;
+
+    if ((fp = fopen(name, "rb")))
+    {
+        if (fseek(fp, 0, SEEK_END) == 0)
+        {
+            if ((n = (size_t) ftell(fp)))
+            {
+                if (fseek(fp, 0, SEEK_SET) == 0)
+                {
+                    if ((p = calloc(n + 1, 1)))
+                    {
+                        fread(p, 1, n, fp);
+                    }
+                }
+            }
+        }
+        fclose(fp);
+    }
+    return p;
+}
+
+/*----------------------------------------------------------------------------*/
+
+static int check_shader_log(GLuint shader, const char *path)
+{
+    GLchar *p = 0;
+    GLint   s = 0;
+    GLint   n = 0;
+
+    /* Check the shader compile status.  If failed, print the log. */
+
+    glGetShaderiv(shader, GL_COMPILE_STATUS,  &s);
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &n);
+
+    if (s == 0)
+    {
+        if ((p = (GLchar *) calloc(n + 1, 1)))
+        {
+            glGetShaderInfoLog(shader, n, NULL, p);
+
+            fprintf(stderr, "%s: OpenGL %s Shader Error:\n%s", path,
+                   (shader == GL_VERTEX_SHADER) ? "Vertex" : "Fragment", p);
+            free(p);
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int check_program_log(GLuint program)
+{
+    GLchar *p = 0;
+    GLint   s = 0;
+    GLint   n = 0;
+
+    /* Check the program link status.  If failed, print the log. */
+
+    glGetProgramiv(program, GL_LINK_STATUS,     &s);
+    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &n);
+
+    if (s == 0)
+    {
+        if ((p = (GLchar *) calloc(n + 1, 1)))
+        {
+            glGetProgramInfoLog(program, n, NULL, p);
+
+            fprintf(stderr, "OpenGL Program Error:\n%s", p);
+            free(p);
+        }
+        return 0;
+    }
+    return 1;
+}
+
+/*----------------------------------------------------------------------------*/
+
+static GLuint load_shader(GLenum type, const char *path)
+{
+    /* Load the named shader source file. */
+
+    GLchar *text;
+
+    if ((text = load_txt(path)))
+    {
+        /* Compile a new shader with the given source. */
+
+        GLuint shader = glCreateShader(type);
+
+        glShaderSource (shader, 1, (const GLchar **) &text, NULL);
+        glCompileShader(shader);
+
+        free(text);
+
+        /* If the shader is valid, return it.  Else, delete it. */
+
+        if (check_shader_log(shader, path))
+            return shader;
+        else
+            glDeleteShader(shader);
+    }
+    return 0;
+}
+
+static GLuint load_program(const char *path_vert, const char *path_frag)
+{
+    /* Load the shaders. */
+
+    GLuint shader_vert = load_shader(GL_VERTEX_SHADER,   path_vert);
+    GLuint shader_frag = load_shader(GL_FRAGMENT_SHADER, path_frag);
+
+    /* Link them to a new program object. */
+
+    if (shader_vert && shader_frag)
+    {
+        GLuint program = glCreateProgram();
+
+        glAttachShader(program, shader_vert);
+        glAttachShader(program, shader_frag);
+
+        glLinkProgram(program);
+
+        /* If the program is valid, return it.  Else, delete it. */
+
+        if (check_program_log(program))
+            return program;
+        else
+            glDeleteProgram(program);
+    }
+    return 0;
+}
+
+/*----------------------------------------------------------------------------*/
+
 static image *find_image(lightprobe *L, const char *path)
 {
     /* Iterate over the images, comparing each to the given path. */
@@ -172,41 +308,49 @@ static image *append_image(lightprobe *L, const char *path, int f,
 {
     /* Allocate a new image structure. */
 
-    image *c;
+    image *c = 0;
+    GLuint o = 0;
+    int    w;
+    int    h;
 
-    if ((c = (image *) malloc (sizeof (image))))
+    if ((o = load_image(path, &w, &h)))
     {
-        /* Cache the image path name. */
+        if ((c = (image *) malloc (sizeof (image))))
+        {
+            /* Cache the image path name. */
 
-        if ((c->path = (char *) malloc(strlen(path) + 1)))
-            strcpy(c->path, path);
+            if ((c->path = (char *) malloc(strlen(path) + 1)))
+                strcpy(c->path, path);
 
-        /* Load the texture and initialize the configuration. */
+            /* Load the texture and initialize the configuration. */
 
-        c->texture  = load_image(path, &c->w, &c->h);
-        c->flags    = f;
-        c->next     = 0;
+            c->texture  = o;
+            c->w        = w;
+            c->h        = h;
+            c->flags    = f;
+            c->next     = 0;
 
-        c->circle_x = cx;
-        c->circle_y = cy;
-        c->circle_r = cr;
-        c->sphere_e = se;
-        c->sphere_a = sa;
-        c->sphere_r = sr;
+            c->circle_x = cx;
+            c->circle_y = cy;
+            c->circle_r = cr;
+            c->sphere_e = se;
+            c->sphere_a = sa;
+            c->sphere_r = sr;
 
-        /* Append the new image to the lightprobe's image list. */
+            /* Append the new image to the lightprobe's image list. */
 
-        if (L->last)
-            L->last->next = c;
-        else
-            L->first      = c;
+            if (L->last)
+                L->last->next = c;
+            else
+                L->first      = c;
 
-        L->last = c;
+            L->last = c;
+        }
     }
     return c;
 }
 
-static void remove_image(lightprobe *L, const char *path)
+static int remove_image(lightprobe *L, const char *path)
 {
     /* Iterate over the images, comparing each to the given path. */
 
@@ -232,8 +376,9 @@ static void remove_image(lightprobe *L, const char *path)
             free(c->path);
             free(c);
 
-            return;
+            return 1;
         }
+    return 0;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -242,10 +387,19 @@ lightprobe *lp_init()
 {
     lightprobe *L = 0;
 
+    /* GLEW initialization has to go somewhere, and it might as well go here. */
+    /* It would be ugly to require the user to call it, and it shouldn't hurt */
+    /* to call it multiple times.                                             */
+
+    glewInit();
+
     if ((L = (lightprobe *) malloc (sizeof (lightprobe))))
     {
         L->first = 0;
         L->last  = 0;
+
+        L->circle_program = load_program("lp-circle.vert", "lp-circle.frag");
+        L->sphere_program = load_program("lp-sphere.vert", "lp-sphere.frag");
     }
 
     return L;
@@ -300,27 +454,43 @@ int lp_export_sphere(lightprobe *L, const char *path)
 
 /*----------------------------------------------------------------------------*/
 
-void lp_append_image(lightprobe *L, const char *path)
+int lp_append_image(lightprobe *L, const char *path)
 {
     if (L && path)
-        append_image(L, path, LP_IMAGE_ACTIVE, 0.0f, 0.0f, 0.0f,
-                                               0.0f, 0.0f, 0.0f);
+        if (append_image(L, path, LP_IMAGE_ACTIVE, 0.0f, 0.0f, 0.0f,
+                                                   0.0f, 0.0f, 0.0f))
+            return 1;
+    return 0;
 }
 
-void lp_remove_image(lightprobe *L, const char *path)
+int lp_remove_image(lightprobe *L, const char *path)
 {
     if (L && path)
-        remove_image(L, path);
+        if (remove_image(L, path))
+            return 1;
+
+    return 0;
 }
 
 /*----------------------------------------------------------------------------*/
+
+/* The image bit field represents various togglable options. The following    */
+/* functions provide bit-wise operations for the manipulation of these.       */
 
 void lp_set_image_flags(lightprobe *L, const char *path, int f)
 {
     image *c;
 
     if ((c = find_image(L, path)))
-        c->flags = f;
+        c->flags |=  f;
+}
+
+void lp_clr_image_flags(lightprobe *L, const char *path, int f)
+{
+    image *c;
+
+    if ((c = find_image(L, path)))
+        c->flags &= ~f;
 }
 
 int lp_get_image_flags(lightprobe *L, const char *path)
@@ -370,6 +540,53 @@ void lp_move_sphere(lightprobe *L, float e, float a, float r)
 void lp_render_circle(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
+    if (L)
+    {
+        image *c;
+
+        glClearColor(0.0, 0.0, 0.0, 0.0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glViewport(0, 0, w, h);
+
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glOrtho(0, w, 0, h, 0, 1);
+
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        glEnable(GL_TEXTURE_RECTANGLE_ARB);
+
+        for (c = L->first; c; c = c->next)
+            if ((c->flags & LP_IMAGE_HIDDEN) == 0)
+            {
+                const int W = c->w;
+                const int H = c->h;
+
+                glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
+
+                glColor3f(1.0f, 1.0f, 1.0f);
+
+                printf("%d %d\n", W, H);
+
+                glBegin(GL_QUADS);
+                {
+                    glTexCoord2i(0, 0);
+                    glVertex2i(0, 0);
+
+                    glTexCoord2i(W, 0);
+                    glVertex2i(W, 0);
+
+                    glTexCoord2i(W, H);
+                    glVertex2i(W, H);
+
+                    glTexCoord2i(0, H);
+                    glVertex2i(0, H);
+                }
+                glEnd();
+            }
+    }
 }
 
 void lp_render_sphere(lightprobe *L, int f, int w, int h,

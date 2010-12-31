@@ -1,5 +1,5 @@
-CFLAGS= -Wall
-LIBS= -ltiff
+CFLAGS= -Wall -g
+LIBS= -ltiff -lGLEW
 
 ifeq ($(shell uname), Darwin)
 	SHARED  = -dynamiclib

@@ -38,12 +38,18 @@
     (get-ffi-obj "lp_export_sphere" lp-lib (_fun _pointer _path -> _bool)))
 
   (define lp-append-image
-    (get-ffi-obj "lp_append_image"  lp-lib (_fun _pointer _path -> _void)))
+    (get-ffi-obj "lp_append_image"  lp-lib (_fun _pointer _path -> _bool)))
   (define lp-remove-image
-    (get-ffi-obj "lp_remove_image"  lp-lib (_fun _pointer _path -> _void)))
+    (get-ffi-obj "lp_remove_image"  lp-lib (_fun _pointer _path -> _bool)))
+
+  (define lp-image-active 1)
+  (define lp-image-hidden 2)
 
   (define lp-set-image-flags
     (get-ffi-obj "lp_set_image_flags" lp-lib
+      (_fun _pointer _path _int -> _void)))
+  (define lp-clr-image-flags
+    (get-ffi-obj "lp_clr_image_flags" lp-lib
       (_fun _pointer _path _int -> _void)))
   (define lp-get-image-flags
     (get-ffi-obj "lp_get_image_flags" lp-lib
@@ -56,6 +62,9 @@
     (get-ffi-obj "lp_move_sphere" lp-lib
       (_fun _pointer _float _float _float -> _void)))
 
+  (define lp-render-grid 1)
+  (define lp-render-res  2)
+
   (define lp-render-circle
     (get-ffi-obj "lp_render_circle" lp-lib
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
@@ -65,7 +74,7 @@
 
   ;;----------------------------------------------------------------------------
 
-  (define lightprobe      (lp-init))
+  (define lightprobe 0)
   (define lightprobe-path (string->path "Untitled"))
 
   ;;----------------------------------------------------------------------------
@@ -148,6 +157,7 @@
   (define mode-options%
     (class preferences-group%
       (super-new [fraction 0.4])
+      (init-field observer)
 
       ; Interaction callback
 
@@ -173,11 +183,15 @@
   (define view-options%
     (class preferences-group%
       (super-new [fraction 0.4])
+      (init-field observer)
       
       ; Interaction callback
 
       (define (set control event)
-        (printf "check ~s~n" (send control get-value)))
+        (let ((b (send control get-value)))
+          (cond ((eq? control grid) (set-grid b))
+                ((eq? control res)  (set-res  b))
+                (else (void)))))
 
       ; GUI sub-elements
       
@@ -194,10 +208,17 @@
 
       ; Public interface
 
-      (define/public (set-grid b) (send grid set-value b))
-      (define/public (get-grid)   (send grid get-value))
-      (define/public (set-res b)  (send res  set-value b))
-      (define/public (get-res)    (send res  get-value))))
+      (define/public (set-grid b)
+        (send grid set-value b)
+        (send observer refresh))
+      (define/public (get-grid)
+        (send grid get-value))
+
+      (define/public (set-res b)
+        (send res set-value b)
+        (send observer refresh))
+      (define/public (get-res)
+        (send res get-value))))
 
   ;;----------------------------------------------------------------------------
   ;; The image-list manages the set of lightprobe images input to the composer.
@@ -207,14 +228,23 @@
   (define image-list%
     (class horizontal-pane%
       (super-new)
+      (init-field observer)
 
       ; Private interface
 
       (define (get-paths)
         (map (lambda (i) (send images get-data i))
                          (send images get-selections)))
+
       (define (get-index path)
         (send images find-string (path->string path)))
+
+      (define (append-path path)
+        (send images append (path->string path) path))
+
+      (define (remove-path path)
+        (let ((i (get-index path)))
+          (if i (send images delete i) (void))))
 
       ; Interaction callbacks
 
@@ -244,17 +274,26 @@
       ; Public interface
 
       (define/public (add-image path)
-        (send images append (path->string path) path))
+        (if (lp-append-image lightprobe path)
+          (begin
+            (append-path path)
+            (send observer refresh))
+          (void)))
 
       (define/public (rem-image path)
-        (let ((i (get-index path)))
-          (if i (send images delete i) #f)))
+        (if (lp-remove-image lightprobe path)
+          (begin
+            (remove-path path)
+            (send observer refresh))
+          (void)))
 
       (define/public (hide-image path)
-        (printf "hide ~s~n" (path->string path)))
+        (lp-set-image-flags lightprobe path 2)
+        (send observer refresh))
 
       (define/public (show-image path)
-        (printf "show ~s~n" (path->string path)))
+        (lp-clr-image-flags lightprobe path 2)
+        (send observer refresh))
       ))
 
   ;;----------------------------------------------------------------------------
@@ -362,7 +401,8 @@
          (lambda ()
            (let ((w (send this get-width))
                  (h (send this get-height)))
-             (lp-render-sphere #f 0 w h 0.0 0.0 0.0 0.0)
+
+             (lp-render-circle lightprobe 0 w h 0.0 0.0 0.0 0.0)
              (swap-gl-buffers)))))
       
       (super-new (style '(gl hscroll vscroll)))))
@@ -399,9 +439,9 @@
                                               [label "Options"]
                                               [stretchable-width  #f]))
 
-             (images (new image-list%   [parent img-group]))
-             (mode   (new mode-options% [parent opt-group]))
-             (view   (new view-options% [parent opt-group]))
+             (images (new image-list%   [parent img-group] [observer canvas]))
+             (mode   (new mode-options% [parent opt-group] [observer canvas]))
+             (view   (new view-options% [parent opt-group] [observer canvas]))
 
            
              (expo (new slider% [parent bot]
@@ -420,4 +460,6 @@
   
   ;;----------------------------------------------------------------------------
 
+  (set! lightprobe (lp-init))
   (send root show #t))
+

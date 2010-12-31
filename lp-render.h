@@ -31,14 +31,15 @@ int lp_export_sphere(lightprobe *lp, const char *path);
 
 /*----------------------------------------------------------------------------*/
 
-void lp_append_image(lightprobe *lp, const char *path);
-void lp_remove_image(lightprobe *lp, const char *path);
+int lp_append_image(lightprobe *lp, const char *path);
+int lp_remove_image(lightprobe *lp, const char *path);
 
 #define LP_IMAGE_DEFAULT 0
 #define LP_IMAGE_ACTIVE  1
 #define LP_IMAGE_HIDDEN  2
 
 void lp_set_image_flags(lightprobe *lp, const char *path, int f);
+void lp_clr_image_flags(lightprobe *lp, const char *path, int f);
 int  lp_get_image_flags(lightprobe *lp, const char *path);
 
 /*----------------------------------------------------------------------------*/
@@ -50,7 +51,7 @@ void lp_move_sphere(lightprobe *lp, float e, float a, float r);
 
 #define LP_RENDER_DEFAULT 0
 #define LP_RENDER_GRID    1
-#define LP_RENDER_TONE    2
+#define LP_RENDER_RES     2
 
 void lp_render_circle(lightprobe *lp, int f, int w, int h,
                       float x, float y, float e, float z);
