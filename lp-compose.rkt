@@ -42,6 +42,11 @@
   (define lp-remove-image
     (get-ffi-obj "lp_remove_image"  lp-lib (_fun _pointer _path -> _bool)))
 
+  (define lp-get-image-width
+    (get-ffi-obj "lp_get_image_width"  lp-lib (_fun _pointer _path -> _int)))
+  (define lp-get-image-height
+    (get-ffi-obj "lp_get_image_height" lp-lib (_fun _pointer _path -> _int)))
+
   (define lp-image-active 1)
   (define lp-image-hidden 2)
 
@@ -74,8 +79,21 @@
 
   ;;----------------------------------------------------------------------------
 
-  (define lightprobe 0)
+  (define lightprobe #f)
   (define lightprobe-path (string->path "Untitled"))
+
+  (define (set-lightprobe! new path)
+    (if new
+        (begin
+          (set-lightprobe-path! path)
+          (lp-free lightprobe)
+          (set!    lightprobe new)
+          (void))
+        (void)))
+
+  (define (set-lightprobe-path! path)
+    (set! lightprobe-path path)
+    (send root set-label (path->string path)))
 
   ;;----------------------------------------------------------------------------
   ;; The Apple HIG defines a preferences panel with all radio and check boxes
@@ -236,6 +254,10 @@
         (map (lambda (i) (send images get-data i))
                          (send images get-selections)))
 
+      (define (get-all-paths)
+        (build-list (send images get-number)
+                    (lambda (i) (send images get-data i))))
+
       (define (get-index path)
         (send images find-string (path->string path)))
 
@@ -245,6 +267,14 @@
       (define (remove-path path)
         (let ((i (get-index path)))
           (if i (send images delete i) (void))))
+
+      (define (update)
+        (let* ((ps (get-all-paths))
+               (ws (map (lambda (p) (lp-get-image-width  lightprobe p)) ps))
+               (hs (map (lambda (p) (lp-get-image-height lightprobe p)) ps))
+               (w  (if (empty? ws) 0 (apply max ws)))
+               (h  (if (empty? hs) 0 (apply max hs))))
+          (send observer reshape w h)))
 
       ; Interaction callbacks
 
@@ -277,23 +307,23 @@
         (if (lp-append-image lightprobe path)
           (begin
             (append-path path)
-            (send observer refresh))
+            (update))
           (void)))
 
       (define/public (rem-image path)
         (if (lp-remove-image lightprobe path)
           (begin
             (remove-path path)
-            (send observer refresh))
+            (update))
           (void)))
 
       (define/public (hide-image path)
         (lp-set-image-flags lightprobe path 2)
-        (send observer refresh))
+        (update))
 
       (define/public (show-image path)
         (lp-clr-image-flags lightprobe path 2)
-        (send observer refresh))
+        (update))
       ))
 
   ;;----------------------------------------------------------------------------
@@ -303,15 +333,6 @@
       (super-new)
 
       ; File state handlers
-
-      (define (set-lightprobe-path! path)
-        (set! lightprobe-path path)
-        (send (send this get-frame) set-label (path->string path)))
-
-      (define (set-lightprobe! new path)
-        (if new (begin (lp-free new)
-                       (set-lightprobe-path! path)
-                       (set! lightprobe new) #t) #f))
 
       (define (save path)
         (set-lightprobe-path! path)
@@ -397,13 +418,20 @@
       (inherit refresh with-gl-context swap-gl-buffers)
       
       (define/override (on-paint)
-        (with-gl-context
-         (lambda ()
-           (let ((w (send this get-width))
-                 (h (send this get-height)))
+        (if lightprobe
+          (with-gl-context
+            (lambda ()
+              (let ((w (send this get-width))
+                    (h (send this get-height)))
 
-             (lp-render-circle lightprobe 0 w h 0.0 0.0 0.0 0.0)
-             (swap-gl-buffers)))))
+                (lp-render-circle lightprobe 0 w h 0.0 0.0 0.0 0.0)
+                (swap-gl-buffers))))
+          (void)))
+
+      (define/public (reshape w h)
+        (let ((x (send this get-scroll-pos 'horizontal))
+              (y (send this get-scroll-pos 'vertical)))
+          (send this init-auto-scrollbars w h x y)))
       
       (super-new (style '(gl hscroll vscroll)))))
 
@@ -460,6 +488,10 @@
   
   ;;----------------------------------------------------------------------------
 
-  (set! lightprobe (lp-init))
-  (send root show #t))
+  ;; Show the application window.
 
+  (send root show #t)
+
+  ;; Start up with a new document.
+
+  (set-lightprobe! (lp-init) (string->path "Untitled")))

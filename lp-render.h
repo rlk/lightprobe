@@ -34,6 +34,9 @@ int lp_export_sphere(lightprobe *lp, const char *path);
 int lp_append_image(lightprobe *lp, const char *path);
 int lp_remove_image(lightprobe *lp, const char *path);
 
+int lp_get_image_width (lightprobe *lp, const char *path);
+int lp_get_image_height(lightprobe *lp, const char *path);
+
 #define LP_IMAGE_DEFAULT 0
 #define LP_IMAGE_ACTIVE  1
 #define LP_IMAGE_HIDDEN  2

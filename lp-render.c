@@ -20,6 +20,13 @@
 
 /*----------------------------------------------------------------------------*/
 
+#define CIRCLE_VERT "lp-circle.vert"
+#define CIRCLE_FRAG "lp-circle.frag"
+#define SPHERE_VERT "lp-sphere.vert"
+#define SPHERE_FRAG "lp-sphere.frag"
+
+/*----------------------------------------------------------------------------*/
+
 struct image
 {
     char  *path;
@@ -398,8 +405,8 @@ lightprobe *lp_init()
         L->first = 0;
         L->last  = 0;
 
-        L->circle_program = load_program("lp-circle.vert", "lp-circle.frag");
-        L->sphere_program = load_program("lp-sphere.vert", "lp-sphere.frag");
+        L->circle_program = load_program(CIRCLE_VERT, CIRCLE_FRAG);
+        L->sphere_program = load_program(SPHERE_VERT, SPHERE_FRAG);
     }
 
     return L;
@@ -411,10 +418,8 @@ lightprobe *lp_open(const char *path)
 
     if (path)
     {
-        if ((L = (lightprobe *) malloc (sizeof (lightprobe))))
+        if ((L = lp_init()))
         {
-            L->first = 0;
-            L->last  = 0;
         }
     }
 
@@ -423,8 +428,6 @@ lightprobe *lp_open(const char *path)
  
 void lp_free(lightprobe *L)
 {
-    printf("Close\n");
-
     if (L)
     {
         free(L);
@@ -433,7 +436,8 @@ void lp_free(lightprobe *L)
  
 int lp_save(lightprobe *L, const char *path)
 {
-    printf("Save %s\n", path);
+    if (L)
+        printf("Save %s\n", path);
     return 1;
 }
 
@@ -481,7 +485,7 @@ void lp_set_image_flags(lightprobe *L, const char *path, int f)
 {
     image *c;
 
-    if ((c = find_image(L, path)))
+    if (L && (c = find_image(L, path)))
         c->flags |=  f;
 }
 
@@ -489,7 +493,7 @@ void lp_clr_image_flags(lightprobe *L, const char *path, int f)
 {
     image *c;
 
-    if ((c = find_image(L, path)))
+    if (L && (c = find_image(L, path)))
         c->flags &= ~f;
 }
 
@@ -497,8 +501,30 @@ int lp_get_image_flags(lightprobe *L, const char *path)
 {
     image *c;
 
-    if ((c = find_image(L, path)))
+    if (L && (c = find_image(L, path)))
         return c->flags;
+
+    return 0;
+}
+
+/*----------------------------------------------------------------------------*/
+
+int lp_get_image_width(lightprobe *L, const char *path)
+{
+    image *c;
+
+    if (L && (c = find_image(L, path)))
+        return c->w;
+
+    return 0;
+}
+
+int lp_get_image_height(lightprobe *L, const char *path)
+{
+    image *c;
+
+    if (L && (c = find_image(L, path)))
+        return c->h;
 
     return 0;
 }
@@ -509,13 +535,14 @@ void lp_move_circle(lightprobe *L, float x, float y, float r)
 {
     image *c;
 
-    for (c = L->first; c; c = c->next)
-        if (c->flags & LP_IMAGE_ACTIVE)
-        {
-            c->circle_x += x;
-            c->circle_y += y;
-            c->circle_r += r;
-        }
+    if (L)
+        for (c = L->first; c; c = c->next)
+            if (c->flags & LP_IMAGE_ACTIVE)
+            {
+                c->circle_x += x;
+                c->circle_y += y;
+                c->circle_r += r;
+            }
 
     printf("Circle %f %f %f\n", x, y, r);
 }
@@ -524,18 +551,51 @@ void lp_move_sphere(lightprobe *L, float e, float a, float r)
 {
     image *c;
 
-    for (c = L->first; c; c = c->next)
-        if (c->flags & LP_IMAGE_ACTIVE)
-        {
-            c->sphere_e += e;
-            c->sphere_a += a;
-            c->sphere_r += r;
-        }
+    if (L)
+        for (c = L->first; c; c = c->next)
+            if (c->flags & LP_IMAGE_ACTIVE)
+            {
+                c->sphere_e += e;
+                c->sphere_a += a;
+                c->sphere_r += r;
+            }
 
     printf("Sphere %f %f %f\n", e, a, r);
 }
 
 /*----------------------------------------------------------------------------*/
+
+static void render_circle_setup(lightprobe *L, int w, int h)
+{
+    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glViewport(0, 0, w, h);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, w, 0, h, 0, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glEnable(GL_TEXTURE_RECTANGLE_ARB);
+    glUseProgram(L->circle_program);
+}
+
+static void render_circle_image(image *c)
+{
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
+
+    glBegin(GL_QUADS);
+    {
+        glVertex2i(0,    0);
+        glVertex2i(c->w, 0);
+        glVertex2i(c->w, c->h);
+        glVertex2i(0,    c->h);
+    }
+    glEnd();
+}
 
 void lp_render_circle(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
@@ -543,78 +603,47 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
     if (L)
     {
         image *c;
+       
+        render_circle_setup(L, w, h);
 
-        glClearColor(0.0, 0.0, 0.0, 0.0);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        for (c = L->first; c; c = c->next)
+            if ((c->flags & LP_IMAGE_HIDDEN) == 0)
+                render_circle_image(c);
+    }
+}
+
+/*----------------------------------------------------------------------------*/
+
+void lp_render_sphere(lightprobe *L, int f, int w, int h,
+                      float x, float y, float e, float z)
+{
+    if (L)
+    {
+        GLdouble l = (GLdouble) w / (GLdouble) h;
+
+        glClearColor(0.2, 0.2, 0.2, 0.0);
+        glClear(GL_COLOR_BUFFER_BIT);
 
         glViewport(0, 0, w, h);
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        glOrtho(0, w, 0, h, 0, 1);
+        glFrustum(-l, l, -1.0, 1.0, 2.0, 10.0);
 
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
+        glTranslated(0.0, 0.0, -5.0);
 
-        glEnable(GL_TEXTURE_RECTANGLE_ARB);
-
-        for (c = L->first; c; c = c->next)
-            if ((c->flags & LP_IMAGE_HIDDEN) == 0)
-            {
-                const int W = c->w;
-                const int H = c->h;
-
-                glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
-
-                glColor3f(1.0f, 1.0f, 1.0f);
-
-                printf("%d %d\n", W, H);
-
-                glBegin(GL_QUADS);
-                {
-                    glTexCoord2i(0, 0);
-                    glVertex2i(0, 0);
-
-                    glTexCoord2i(W, 0);
-                    glVertex2i(W, 0);
-
-                    glTexCoord2i(W, H);
-                    glVertex2i(W, H);
-
-                    glTexCoord2i(0, H);
-                    glVertex2i(0, H);
-                }
-                glEnd();
-            }
+        glBegin(GL_QUADS);
+        {
+            glColor4d(1.0, 1.0, 0.0, 1.0);
+            glVertex3d(0.0, 0.0, 0.0);
+            glVertex3d(1.0, 0.0, 0.0);
+            glVertex3d(1.0, 1.0, 0.0);
+            glVertex3d(0.0, 1.0, 0.0);
+        }
+        glEnd();
     }
 }
 
-void lp_render_sphere(lightprobe *L, int f, int w, int h,
-                      float x, float y, float e, float z)
-{
-    GLdouble l = (GLdouble) w / (GLdouble) h;
-
-    glClearColor(0.2, 0.2, 0.2, 0.0);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glViewport(0, 0, w, h);
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glFrustum(-l, l, -1.0, 1.0, 2.0, 10.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glTranslated(0.0, 0.0, -5.0);
-
-    glBegin(GL_QUADS);
-    {
-        glColor4d(1.0, 1.0, 0.0, 1.0);
-        glVertex3d(0.0, 0.0, 0.0);
-        glVertex3d(1.0, 0.0, 0.0);
-        glVertex3d(1.0, 1.0, 0.0);
-        glVertex3d(0.0, 1.0, 0.0);
-    }
-    glEnd();
-}
-
+/*----------------------------------------------------------------------------*/
