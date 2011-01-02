@@ -158,6 +158,10 @@
       (super-new)
       (send this accept-drop-files #t)))
 
+  ;;----------------------------------------------------------------------------
+  ;; drop-frame is a frame that accepts drag-and-drop events, allowing a call-
+  ;; back function to handle them.
+
   (define drop-frame%
     (class frame%
       (init-field drop-callback)
@@ -170,9 +174,10 @@
 
   ;;----------------------------------------------------------------------------
   ;; The lightprobe viewer has two modes: Image view and Environment view.
-  ;; The mode-options preference group manages the current mode state.
+  ;; The view-mode preference group manages the current mode state, with the
+  ;; lightprobe canvas as observer.
 
-  (define mode-options%
+  (define view-mode%
     (class preferences-group%
       (super-new [fraction 0.4])
       (init-field observer)
@@ -180,7 +185,7 @@
       ; Interaction callback
 
       (define (set control event)
-        (printf "radio ~s~n" (send radio get-selection)))
+        (send observer refresh))
 
       ; GUI sub-elements
       
@@ -195,8 +200,8 @@
       (define/public (get-mode)   (send radio get-selection))))
 
   ;;----------------------------------------------------------------------------
-  ;; The lightprobe viewer has a number of rendering modes. The view-options
-  ;; preference group manages these.
+  ;; The lightprobe viewer has a number of rendering options. The view-options
+  ;; preference group manages these, with the lightprobe canvas as observer.
 
   (define view-options%
     (class preferences-group%
@@ -205,11 +210,8 @@
       
       ; Interaction callback
 
-      (define (set control event)
-        (let ((b (send control get-value)))
-          (cond ((eq? control grid) (set-grid b))
-                ((eq? control res)  (set-res  b))
-                (else (void)))))
+      (define (do-grid control event) (set-grid (send control get-value)))
+      (define (do-res  control event) (set-res  (send control get-value)))
 
       ; GUI sub-elements
       
@@ -218,10 +220,10 @@
       (define group (new vertical-pane% [parent this]
                                         [alignment '(left top)]))
       (define grid  (new check-box%     [parent group]
-                                        [callback set]
+                                        [callback do-grid]
                                         [label "Show Grid"]))
       (define res   (new check-box%     [parent group]
-                                        [callback set]
+                                        [callback do-res]
                                         [label "Show Resolution"]))
 
       ; Public interface
@@ -239,9 +241,39 @@
         (send res get-value))))
 
   ;;----------------------------------------------------------------------------
+  ;; The lightprobe viewer has a few variables that tune the rendering. The
+  ;; view-values group manages these, with the lightprobe canvas as observer.
+
+  (define view-values%
+    (class horizontal-pane%
+      (super-new)
+      (init-field observer)
+
+      (define (set control event)
+        (send observer refresh))
+
+      (define expo (new slider% [parent this]
+                                [label "Exposure"]
+                                [min-value  0]
+                                [max-value  8]
+                                [callback set]
+                                [style '(horizontal plain)]))
+      (define zoom (new slider% [parent this]
+                                [label "Zoom"]
+                                [min-value -5]
+                                [max-value  5]
+                                [callback set]
+                                [style '(horizontal plain)]))
+
+      (define/public (get-expo)
+        (send expo get-value))
+      (define/public (get-zoom)
+        (expt 2 (send zoom get-value)))))
+
+  ;;----------------------------------------------------------------------------
   ;; The image-list manages the set of lightprobe images input to the composer.
   ;; It allows the addition and removal of images, hiding and showing of loaded
-  ;; images, and the selection of a proper subset of images for configuration.
+  ;; images, and the selection of a subset of images for configuration.
 
   (define image-list%
     (class horizontal-pane%
@@ -250,13 +282,9 @@
 
       ; Private interface
 
-      (define (get-paths)
+      (define (get-selection-list)
         (map (lambda (i) (send images get-data i))
                          (send images get-selections)))
-
-      (define (get-all-paths)
-        (build-list (send images get-number)
-                    (lambda (i) (send images get-data i))))
 
       (define (get-index path)
         (send images find-string (path->string path)))
@@ -268,24 +296,26 @@
         (let ((i (get-index path)))
           (if i (send images delete i) (void))))
 
-      (define (update)
-        (let* ((ps (get-all-paths))
-               (ws (map (lambda (p) (lp-get-image-width  lightprobe p)) ps))
-               (hs (map (lambda (p) (lp-get-image-height lightprobe p)) ps))
-               (w  (if (empty? ws) 0 (apply max ws)))
-               (h  (if (empty? hs) 0 (apply max hs))))
-          (send observer reshape w h)))
-
       ; Interaction callbacks
 
       (define (do-add  control event)
         (map (lambda (p) (send this  add-image p)) (or (get-file-list) '())))
       (define (do-rem  control event)
-        (map (lambda (p) (send this  rem-image p)) (get-paths)))
+        (map (lambda (p) (send this  rem-image p)) (get-selection-list)))
       (define (do-hide control event)
-        (map (lambda (p) (send this hide-image p)) (get-paths)))
+        (map (lambda (p) (send this hide-image p)) (get-selection-list)))
       (define (do-show control event)
-        (map (lambda (p) (send this show-image p)) (get-paths)))
+        (map (lambda (p) (send this show-image p)) (get-selection-list)))
+
+      (define (set control event)
+        (let loop ((n (send images get-number)) (i 0))
+          (if (< i n)
+              (let ((path (send images get-data i)))
+                (if (send images is-selected? i)
+                    (lp-set-image-flags lightprobe path lp-image-active)
+                    (lp-clr-image-flags lightprobe path lp-image-active))
+                (loop n (+ i 1)))
+              (void))))
 
       ; GUI sub-elements
 
@@ -294,6 +324,7 @@
       (define images  (new list-box%      [parent this]
                                           [label #f]
                                           [choices '()]
+                                          [callback set]
                                           [style '(extended)]))
 
       (define add  (instantiate packed-button% ("Add"    buttons do-add)))
@@ -307,24 +338,27 @@
         (if (lp-append-image lightprobe path)
           (begin
             (append-path path)
-            (update))
+            (send observer reshape))
           (void)))
 
       (define/public (rem-image path)
         (if (lp-remove-image lightprobe path)
           (begin
             (remove-path path)
-            (update))
+            (send observer reshape))
           (void)))
 
       (define/public (hide-image path)
-        (lp-set-image-flags lightprobe path 2)
-        (update))
+        (lp-set-image-flags lightprobe path lp-image-hidden)
+        (send observer reshape))
 
       (define/public (show-image path)
-        (lp-clr-image-flags lightprobe path 2)
-        (update))
-      ))
+        (lp-clr-image-flags lightprobe path lp-image-hidden)
+        (send observer reshape))
+
+      (define/public (get-path-list)
+        (build-list (send images get-number)
+                    (lambda (i) (send images get-data i))))))
 
   ;;----------------------------------------------------------------------------
 
@@ -416,7 +450,14 @@
   (define lp-canvas%
     (class canvas%
       (inherit refresh with-gl-context swap-gl-buffers)
-      
+
+      (init-field get-mode)
+      (init-field get-paths)
+      (init-field get-expo)
+      (init-field get-zoom)
+      (init-field get-grid)
+      (init-field get-res)
+
       (define/override (on-paint)
         (if lightprobe
           (with-gl-context
@@ -428,66 +469,76 @@
                 (swap-gl-buffers))))
           (void)))
 
+#|
+      (define (update)
+        (let* ((ps (get-all-paths))
+               (ws (map (lambda (p) (lp-get-image-width  lightprobe p)) ps))
+               (hs (map (lambda (p) (lp-get-image-height lightprobe p)) ps))
+               (w  (if (empty? ws) 1 (apply max ws)))
+               (h  (if (empty? hs) 1 (apply max hs))))
+          (send observer reshape w h)))
+
+
       (define/public (reshape w h)
         (let ((x (send this get-scroll-pos 'horizontal))
               (y (send this get-scroll-pos 'vertical)))
           (send this init-auto-scrollbars w h x y)))
-      
+|#      
+      (define/public (reshape)
+        (send this refresh))
+
       (super-new (style '(gl hscroll vscroll)))))
 
   ;;----------------------------------------------------------------------------
 
+  ;; The lp-frame is the toplevel window of the application, and the overall
+  ;; organizing structure through which all state changes flow. All GUI sub-
+  ;; groups are instantiated as members and a variety of anonymous functions
+  ;; a closed within this scope, providing cross-cutting access between sub-
+  ;; elements of the application.
+
   (define lp-frame%
     (class drop-frame%
-      (super-new [label "Lightprobe Composer"])
+      (super-new [label "Lightprobe Composer"]
+                 [drop-callback (lambda (path)
+                                  (send images add-image path))])
 
       (define menus (new lp-menu-bar% [parent this]))
-      ))
-  
-  ;;----------------------------------------------------------------------------
-  ;; The application
 
-  (define root
-    (letrec ((frame  (new lp-frame%
-                          [drop-callback (lambda (path)
-                                           (send images add-image path))]))
+      (define top (new horizontal-pane% [parent this] [stretchable-height #f]))
+      (define mid (new horizontal-pane% [parent this] [stretchable-height #t]))
+      (define bot (new horizontal-pane% [parent this] [stretchable-height #f]))
 
-             (top    (new horizontal-pane% [parent frame]
-                                           [stretchable-height #f]))
-             (canvas (new lp-canvas%       [parent frame]
-                                           [min-width  640]
-                                           [min-height 480]))
-             (bot    (new horizontal-pane% [parent frame]
-                                           [stretchable-height #f]))
+      (define img (new group-box-panel% [parent top]
+                                        [label "Images" ]
+                                        [stretchable-width #t]))
+      (define opt (new group-box-panel% [parent top]
+                                        [label "Options"]
+                                        [stretchable-width #f]))
 
-             (img-group (new group-box-panel% [parent top]
-                                              [label "Images"]
-                                              [stretchable-height #f]))
-             (opt-group (new group-box-panel% [parent top]
-                                              [label "Options"]
-                                              [stretchable-width  #f]))
+      (define canvas
+        (new lp-canvas%
+             [parent     mid]
+             [min-width  640]
+             [min-height 480]
+             [get-mode  (lambda () (send mode    get-mode))]
+             [get-paths (lambda () (send images  get-path-list))]
+             [get-expo  (lambda () (send values  get-expo))]
+             [get-zoom  (lambda () (send values  get-zoom))]
+             [get-grid  (lambda () (send options get-grid))]
+             [get-res   (lambda () (send options get-res))]))
 
-             (images (new image-list%   [parent img-group] [observer canvas]))
-             (mode   (new mode-options% [parent opt-group] [observer canvas]))
-             (view   (new view-options% [parent opt-group] [observer canvas]))
-
-           
-             (expo (new slider% [parent bot]
-                                [label "Exposure"]
-                                [min-value   1]
-                                [max-value 100]
-                                [style '(horizontal plain)]))
-             (zoom (new slider% [parent bot]
-                                [label "Zoom"]
-                                [min-value   1]
-                                [max-value 100]
-                                [style '(horizontal plain)]))
-           
-           )
-      frame))
+      (define images  (new image-list%   [parent img] [observer canvas]))
+      (define mode    (new view-mode%    [parent opt] [observer canvas]))
+      (define options (new view-options% [parent opt] [observer canvas]))
+      (define values  (new view-values%  [parent bot] [observer canvas]))))
   
   ;;----------------------------------------------------------------------------
 
+  ;; Instantiate the application.
+
+  (define root (new lp-frame%))
+  
   ;; Show the application window.
 
   (send root show #t)

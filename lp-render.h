@@ -37,9 +37,14 @@ int lp_remove_image(lightprobe *lp, const char *path);
 int lp_get_image_width (lightprobe *lp, const char *path);
 int lp_get_image_height(lightprobe *lp, const char *path);
 
-#define LP_IMAGE_DEFAULT 0
-#define LP_IMAGE_ACTIVE  1
-#define LP_IMAGE_HIDDEN  2
+/*----------------------------------------------------------------------------*/
+
+enum
+{
+    LP_IMAGE_DEFAULT,
+    LP_IMAGE_ACTIVE,
+    LP_IMAGE_HIDDEN
+};
 
 void lp_set_image_flags(lightprobe *lp, const char *path, int f);
 void lp_clr_image_flags(lightprobe *lp, const char *path, int f);
@@ -52,9 +57,12 @@ void lp_move_sphere(lightprobe *lp, float e, float a, float r);
 
 /*----------------------------------------------------------------------------*/
 
-#define LP_RENDER_DEFAULT 0
-#define LP_RENDER_GRID    1
-#define LP_RENDER_RES     2
+enum
+{
+    LP_RENDER_DEFAULT,
+    LP_RENDER_GRID,
+    LP_RENDER_RES
+};
 
 void lp_render_circle(lightprobe *lp, int f, int w, int h,
                       float x, float y, float e, float z);
