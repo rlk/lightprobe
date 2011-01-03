@@ -22,7 +22,8 @@
 
   (require ffi/unsafe)
 
-  (define lp-lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
+; (define lp-lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
+  (define lp-lib (ffi-lib "lp-render"))
 
   (define lp-init
     (get-ffi-obj "lp_init"          lp-lib (_fun                -> _pointer)))
@@ -387,6 +388,9 @@
     (class menu-bar%
       (super-new)
 
+      (define (get-shifted-shortcut-prefix)
+        (cons 'shift (get-default-shortcut-prefix)))
+
       ; File state handlers
 
       (define (save path)
@@ -452,7 +456,7 @@
                         [label "Save As..."]
                         [callback do-save-as]
                         [shortcut #\s]
-                        [shortcut-prefix '(shift cmd)])
+                        [shortcut-prefix (get-default-shortcut-prefix)])
 
         (new separator-menu-item% [parent file])
 
@@ -464,7 +468,7 @@
                         [label "Export Sphere Map..."]
                         [callback do-export-sphere]
                         [shortcut #\e]
-                        [shortcut-prefix '(shift cmd)]))))
+                        [shortcut-prefix (get-default-shortcut-prefix)]))))
 
   ;;----------------------------------------------------------------------------
 
