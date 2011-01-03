@@ -79,6 +79,15 @@
 
   ;;----------------------------------------------------------------------------
 
+  (define (lp-is-image-active?  path)
+    (bitwise-bit-set? (lp-get-image-flags lightprobe path) 0))
+  (define (lp-is-image-hidden?  path)
+    (bitwise-bit-set? (lp-get-image-flags lightprobe path) 1))
+  (define (lp-is-image-visible? path)
+    (not (lp-is-image-hidden? path)))
+
+  ;;----------------------------------------------------------------------------
+
   (define lightprobe #f)
   (define lightprobe-path (string->path "Untitled"))
 
@@ -249,26 +258,28 @@
       (super-new)
       (init-field observer)
 
-      (define (set control event)
-        (send observer refresh))
+      (define (do-expo control event) (send observer refresh))
+      (define (do-zoom control event) (send observer reshape))
 
       (define expo (new slider% [parent this]
                                 [label "Exposure"]
                                 [min-value  0]
                                 [max-value  8]
-                                [callback set]
+                                [callback do-expo]
                                 [style '(horizontal plain)]))
       (define zoom (new slider% [parent this]
                                 [label "Zoom"]
                                 [min-value -5]
                                 [max-value  5]
-                                [callback set]
+                                [callback do-zoom]
                                 [style '(horizontal plain)]))
 
       (define/public (get-expo)
-        (send expo get-value))
+        (exact->inexact (send expo get-value)))
       (define/public (get-zoom)
-        (expt 2 (send zoom get-value)))))
+        (let ((z (expt 2 (send zoom get-value))))
+          (exact->inexact z)))
+      ))
 
   ;;----------------------------------------------------------------------------
   ;; The image-list manages the set of lightprobe images input to the composer.
@@ -307,6 +318,8 @@
       (define (do-show control event)
         (map (lambda (p) (send this show-image p)) (get-selection-list)))
 
+      ; Set the 'active' flag on all images based on selection status.
+
       (define (set control event)
         (let loop ((n (send images get-number)) (i 0))
           (if (< i n)
@@ -332,7 +345,7 @@
       (define hide (instantiate packed-button% ("Hide"   buttons do-hide)))
       (define show (instantiate packed-button% ("Show"   buttons do-show)))
 
-      ; Public interface
+      ; Add (load) the named image and ping the observer.
 
       (define/public (add-image path)
         (if (lp-append-image lightprobe path)
@@ -341,6 +354,8 @@
             (send observer reshape))
           (void)))
 
+      ; Remove (unload) the named image and ping the observer.
+
       (define/public (rem-image path)
         (if (lp-remove-image lightprobe path)
           (begin
@@ -348,13 +363,19 @@
             (send observer reshape))
           (void)))
 
+      ; Set the 'hidden' flag on the named image and ping the observer.
+
       (define/public (hide-image path)
         (lp-set-image-flags lightprobe path lp-image-hidden)
         (send observer reshape))
 
+      ; Clear the 'hidden' flag on the named image and ping the observer.
+
       (define/public (show-image path)
         (lp-clr-image-flags lightprobe path lp-image-hidden)
         (send observer reshape))
+
+      ; Return a list of path names of all currently-loaded images.
 
       (define/public (get-path-list)
         (build-list (send images get-number)
@@ -458,34 +479,49 @@
       (init-field get-grid)
       (init-field get-res)
 
+      (define (get-x)
+        (let-values (((x y) (send this get-view-start))
+                     ((w h) (send this get-virtual-size)))
+          (exact->inexact (/ x w))))
+      (define (get-y)
+        (let-values (((x y) (send this get-view-start))
+                     ((w h) (send this get-virtual-size)))
+          (exact->inexact (/ y h))))
+
       (define/override (on-paint)
         (if lightprobe
           (with-gl-context
             (lambda ()
-              (let ((w (send this get-width))
-                    (h (send this get-height)))
+              (let ((x (get-x))
+                    (y (get-y))
+                    (w (send this get-width))
+                    (h (send this get-height))
+                    (e (get-expo))
+                    (z (get-zoom))
+                    (f (bitwise-ior (if (get-grid) lp-render-grid 0)
+                                    (if (get-res)  lp-render-res  0))))
 
-                (lp-render-circle lightprobe 0 w h 0.0 0.0 0.0 0.0)
+                (case (get-mode)
+                  ((0) (lp-render-circle lightprobe f w h x y e z))
+                  ((1) (lp-render-sphere lightprobe f w h x y e z)))
+
                 (swap-gl-buffers))))
           (void)))
 
-#|
-      (define (update)
-        (let* ((ps (get-all-paths))
+      (define/public (reshape)
+        (let* ((ps (filter lp-is-image-visible? (get-paths)))
+
                (ws (map (lambda (p) (lp-get-image-width  lightprobe p)) ps))
                (hs (map (lambda (p) (lp-get-image-height lightprobe p)) ps))
-               (w  (if (empty? ws) 1 (apply max ws)))
-               (h  (if (empty? hs) 1 (apply max hs))))
-          (send observer reshape w h)))
 
+               (zoom (lambda (d) (inexact->exact (ceiling (* d (get-zoom))))))
 
-      (define/public (reshape w h)
-        (let ((x (send this get-scroll-pos 'horizontal))
-              (y (send this get-scroll-pos 'vertical)))
+               (w (if (empty? ws) 1 (zoom (apply max ws))))
+               (h (if (empty? hs) 1 (zoom (apply max hs))))
+               (x (get-x))
+               (y (get-y)))
+
           (send this init-auto-scrollbars w h x y)))
-|#      
-      (define/public (reshape)
-        (send this refresh))
 
       (super-new (style '(gl hscroll vscroll)))))
 
@@ -503,7 +539,7 @@
                  [drop-callback (lambda (path)
                                   (send images add-image path))])
 
-      (define menus (new lp-menu-bar% [parent this]))
+      ; Layout panes
 
       (define top (new horizontal-pane% [parent this] [stretchable-height #f]))
       (define mid (new horizontal-pane% [parent this] [stretchable-height #t]))
@@ -515,6 +551,10 @@
       (define opt (new group-box-panel% [parent top]
                                         [label "Options"]
                                         [stretchable-width #f]))
+
+      ; GUI elements
+
+      (define menus (new lp-menu-bar% [parent this]))
 
       (define canvas
         (new lp-canvas%

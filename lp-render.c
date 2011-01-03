@@ -565,7 +565,8 @@ void lp_move_sphere(lightprobe *L, float e, float a, float r)
 
 /*----------------------------------------------------------------------------*/
 
-static void render_circle_setup(lightprobe *L, int w, int h)
+static void render_circle_setup(lightprobe *L, int w, int h,
+                                float x, float y, float e, float z)
 {
     glClearColor(0.0, 0.0, 0.0, 0.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -600,11 +601,13 @@ static void render_circle_image(image *c)
 void lp_render_circle(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
+    printf("render_circle %d %d %d %f %f %f %f\n", f, w, h, x, y, e, z);
+
     if (L)
     {
         image *c;
        
-        render_circle_setup(L, w, h);
+        render_circle_setup(L, w, h, x, y, e, z);
 
         for (c = L->first; c; c = c->next)
             if ((c->flags & LP_IMAGE_HIDDEN) == 0)
