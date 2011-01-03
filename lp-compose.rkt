@@ -22,70 +22,68 @@
 
   (require ffi/unsafe)
 
-; (define lp-lib (ffi-lib "/Users/rlk/Projects/lightprobe/lp-render"))
   (define lp-lib (ffi-lib "lp-render"))
 
+  (define (lp-ffi str sig)
+    (get-ffi-obj str lp-lib sig))
+
   (define lp-init
-    (get-ffi-obj "lp_init"          lp-lib (_fun                -> _pointer)))
-  (define lp-open
-    (get-ffi-obj "lp_open"          lp-lib (_fun          _path -> _pointer)))
-  (define lp-save
-    (get-ffi-obj "lp_save"          lp-lib (_fun _pointer _path -> _bool)))
+    (lp-ffi "lp_init" (_fun          -> _pointer)))
   (define lp-free
-    (get-ffi-obj "lp_free"          lp-lib (_fun _pointer       -> _void)))
-  (define lp-export-cube
-    (get-ffi-obj "lp_export_cube"   lp-lib (_fun _pointer _path -> _bool)))
-  (define lp-export-sphere
-    (get-ffi-obj "lp_export_sphere" lp-lib (_fun _pointer _path -> _bool)))
+    (lp-ffi "lp_free" (_fun _pointer -> _void)))
 
   (define lp-append-image
-    (get-ffi-obj "lp_append_image"  lp-lib (_fun _pointer _path -> _bool)))
+    (lp-ffi "lp_add_image" (_fun _pointer _path -> _int)))
   (define lp-remove-image
-    (get-ffi-obj "lp_remove_image"  lp-lib (_fun _pointer _path -> _bool)))
+    (lp-ffi "lp_del_image" (_fun _pointer _int  -> _void)))
 
   (define lp-get-image-width
-    (get-ffi-obj "lp_get_image_width"  lp-lib (_fun _pointer _path -> _int)))
+    (lp-ffi "lp_get_image_width"  (_fun _pointer _int -> _int)))
   (define lp-get-image-height
-    (get-ffi-obj "lp_get_image_height" lp-lib (_fun _pointer _path -> _int)))
+    (lp-ffi "lp_get_image_height" (_fun _pointer _int -> _int)))
 
-  (define lp-image-active 1)
-  (define lp-image-hidden 2)
+  (define lp-image-loaded 1)
+  (define lp-image-active 2)
+  (define lp-image-hidden 4)
 
   (define lp-set-image-flags
-    (get-ffi-obj "lp_set_image_flags" lp-lib
-      (_fun _pointer _path _int -> _void)))
+    (lp-ffi "lp_set_image_flags" (_fun _pointer _int _int -> _void)))
   (define lp-clr-image-flags
-    (get-ffi-obj "lp_clr_image_flags" lp-lib
-      (_fun _pointer _path _int -> _void)))
+    (lp-ffi "lp_clr_image_flags" (_fun _pointer _int _int -> _void)))
   (define lp-get-image-flags
-    (get-ffi-obj "lp_get_image_flags" lp-lib
-      (_fun _pointer _path      -> _int)))
+    (lp-ffi "lp_get_image_flags" (_fun _pointer _int      -> _int)))
 
-  (define lp-move-circle
-    (get-ffi-obj "lp_move_circle" lp-lib
-      (_fun _pointer _float _float _float -> _void)))
-  (define lp-move-sphere
-    (get-ffi-obj "lp_move_sphere" lp-lib
-      (_fun _pointer _float _float _float -> _void)))
+  (define lp-circle-x         0)
+  (define lp-circle-y         1)
+  (define lp-circle-radius    2)
+  (define lp-sphere-elevation 3)
+  (define lp-sphere-azimuth   4)
+  (define lp-sphere-roll      5)
+
+  (define lp-set-image-value
+    (lp-ffi "lp_set_image_value" (_fun _pointer _int _int _float -> _void)))
+  (define lp-get-image-value
+    (lp-ffi "lp_get_image_value" (_fun _pointer _int _int        -> _float)))
 
   (define lp-render-grid 1)
   (define lp-render-res  2)
 
   (define lp-render-circle
-    (get-ffi-obj "lp_render_circle" lp-lib
+    (lp-ffi "lp_render_circle" 
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
   (define lp-render-sphere
-    (get-ffi-obj "lp_render_sphere" lp-lib
+    (lp-ffi "lp_render_sphere" 
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
+
+  (define lp-export-cube
+    (lp-ffi "lp_export_cube"    (_fun _pointer _path -> _bool)))
+  (define lp-export-sphere
+    (lp-ffi "lp_export_sphere"  (_fun _pointer _path -> _bool)))
 
   ;;----------------------------------------------------------------------------
 
-  (define (lp-is-image-active?  path)
-    (bitwise-bit-set? (lp-get-image-flags lightprobe path) 0))
-  (define (lp-is-image-hidden?  path)
-    (bitwise-bit-set? (lp-get-image-flags lightprobe path) 1))
-  (define (lp-is-image-visible? path)
-    (not (lp-is-image-hidden? path)))
+  (define (lp-is-image-visible? i)
+    (zero? (bitwise-and lp-image-hidden (lp-get-image-flags lightprobe i))))
 
   ;;----------------------------------------------------------------------------
 
@@ -352,8 +350,7 @@
         (if (lp-append-image lightprobe path)
           (begin
             (append-path path)
-            (send observer reshape))
-          (void)))
+            (send observer reshape) #t) #f))
 
       ; Remove (unload) the named image and ping the observer.
 
@@ -361,8 +358,7 @@
         (if (lp-remove-image lightprobe path)
           (begin
             (remove-path path)
-            (send observer reshape))
-          (void)))
+            (send observer reshape) #t) #f))
 
       ; Set the 'hidden' flag on the named image and ping the observer.
 
@@ -375,6 +371,12 @@
       (define/public (show-image path)
         (lp-clr-image-flags lightprobe path lp-image-hidden)
         (send observer reshape))
+
+      (define/public (save-file path)
+        )
+
+      (define/public (load-file path)
+        )
 
       ; Return a list of path names of all currently-loaded images.
 

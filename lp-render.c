@@ -10,6 +10,7 @@
 /* or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License   */
 /* for more details.                                                          */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,37 +26,25 @@
 #define SPHERE_VERT "lp-sphere.vert"
 #define SPHERE_FRAG "lp-sphere.frag"
 
+#define LP_MAX_IMAGE 8
+
 /*----------------------------------------------------------------------------*/
 
 struct image
 {
-    char  *path;
+    GLuint texture;
     int    w;
     int    h;
-    GLuint texture;
-
     int    flags;
-
-    float  circle_x;
-    float  circle_y;
-    float  circle_r;
-
-    float  sphere_e;
-    float  sphere_a;
-    float  sphere_r;
-
-    struct image *next;
+    float  values[LP_MAX_VALUE];
 };
-
-typedef struct image image;
 
 struct lightprobe
 {
     GLuint circle_program;
     GLuint sphere_program;
 
-    image *first;
-    image *last;
+    struct image images[LP_MAX_IMAGE];
 };
 
 /*----------------------------------------------------------------------------*/
@@ -97,7 +86,7 @@ static void *tifread(const char *path, int *w, int *h)
 /* Write the contents of a buffer to a 4-channel 32-bit floating point TIFF   */
 /* image.                                                                     */
 
-void tifwrite(const char *path, int w, int h, void *p)
+static void tifwrite(const char *path, int w, int h, void *p)
 {
     TIFF *T = 0;
     
@@ -124,13 +113,11 @@ void tifwrite(const char *path, int w, int h, void *p)
     }
 }
 
-/*----------------------------------------------------------------------------*/
-
 /* Load the named TIFF image into a 32-bit floating point OpenGL rectangular  */
 /* texture. Release the image buffer after loading, and return the texture    */
 /* object.                                                                    */
 
-static GLuint load_image(const char *path, int *w, int *h)
+static GLuint load_texture(const char *path, int *w, int *h)
 {
     const GLenum T = GL_TEXTURE_RECTANGLE_ARB;
 
@@ -146,8 +133,8 @@ static GLuint load_image(const char *path, int *w, int *h)
 
         glTexParameteri(T, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(T, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(T, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(T, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(T, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+        glTexParameteri(T, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
 
         free(p);
     }
@@ -296,100 +283,6 @@ static GLuint load_program(const char *path_vert, const char *path_frag)
 
 /*----------------------------------------------------------------------------*/
 
-static image *find_image(lightprobe *L, const char *path)
-{
-    /* Iterate over the images, comparing each to the given path. */
-
-    image *c;
-
-    for (c = L->first; c; c = c->next)
-        if (strcmp(c->path, path) == 0)
-            return c;
-
-    return 0;
-}
-
-static image *append_image(lightprobe *L, const char *path, int f,
-                                        float cx, float cy, float cr,
-                                        float se, float sa, float sr)
-{
-    /* Allocate a new image structure. */
-
-    image *c = 0;
-    GLuint o = 0;
-    int    w;
-    int    h;
-
-    if ((o = load_image(path, &w, &h)))
-    {
-        if ((c = (image *) malloc (sizeof (image))))
-        {
-            /* Cache the image path name. */
-
-            if ((c->path = (char *) malloc(strlen(path) + 1)))
-                strcpy(c->path, path);
-
-            /* Load the texture and initialize the configuration. */
-
-            c->texture  = o;
-            c->w        = w;
-            c->h        = h;
-            c->flags    = f;
-            c->next     = 0;
-
-            c->circle_x = cx;
-            c->circle_y = cy;
-            c->circle_r = cr;
-            c->sphere_e = se;
-            c->sphere_a = sa;
-            c->sphere_r = sr;
-
-            /* Append the new image to the lightprobe's image list. */
-
-            if (L->last)
-                L->last->next = c;
-            else
-                L->first      = c;
-
-            L->last = c;
-        }
-    }
-    return c;
-}
-
-static int remove_image(lightprobe *L, const char *path)
-{
-    /* Iterate over the images, comparing each to the given path. */
-
-    image *p = 0;
-    image *c = 0;
-
-    for (c = L->first; c; p = c, c = c->next)
-        if (strcmp(c->path, path) == 0)
-        {
-            /* Remove the image from the lightprobe's image list. */
-            if (p)
-                p->next  = c->next;
-            else
-                L->first = c->next;
-
-            if (L->last == c)
-                L->last  = p;
-
-            /* Release the image. */
-
-            glDeleteTextures(1, &c->texture);
-
-            free(c->path);
-            free(c);
-
-            return 1;
-        }
-    return 0;
-}
-
-/*----------------------------------------------------------------------------*/
-
 lightprobe *lp_init()
 {
     lightprobe *L = 0;
@@ -400,11 +293,8 @@ lightprobe *lp_init()
 
     glewInit();
 
-    if ((L = (lightprobe *) malloc (sizeof (lightprobe))))
+    if ((L = (lightprobe *) calloc (1, sizeof (lightprobe))))
     {
-        L->first = 0;
-        L->last  = 0;
-
         L->circle_program = load_program(CIRCLE_VERT, CIRCLE_FRAG);
         L->sphere_program = load_program(SPHERE_VERT, SPHERE_FRAG);
     }
@@ -412,33 +302,16 @@ lightprobe *lp_init()
     return L;
 }
 
-lightprobe *lp_open(const char *path)
-{
-    lightprobe *L = 0;
-
-    if (path)
-    {
-        if ((L = lp_init()))
-        {
-        }
-    }
-
-    return L;
-}
- 
 void lp_free(lightprobe *L)
 {
-    if (L)
-    {
-        free(L);
-    }
-}
- 
-int lp_save(lightprobe *L, const char *path)
-{
-    if (L)
-        printf("Save %s\n", path);
-    return 1;
+    int i;
+
+    assert(L);
+
+    for (i = 0; i < LP_MAX_IMAGE; i++)
+        lp_del_image(L, i);
+
+    free(L);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -458,22 +331,72 @@ int lp_export_sphere(lightprobe *L, const char *path)
 
 /*----------------------------------------------------------------------------*/
 
-int lp_append_image(lightprobe *L, const char *path)
+int lp_add_image(lightprobe *L, const char *path)
 {
-    if (L && path)
-        if (append_image(L, path, LP_IMAGE_ACTIVE, 0.0f, 0.0f, 0.0f,
-                                                   0.0f, 0.0f, 0.0f))
-            return 1;
-    return 0;
+    GLuint o = 0;
+    int    i = 0;
+    int    w = 0;
+    int    h = 0;
+
+    assert(L);
+    assert(path);
+
+    /* Load the texture. */
+
+    if ((o = load_texture(path, &w, &h)))
+    {
+        /* Find the lightprobe's first unused image slot. */
+
+        for (i = 0; i < LP_MAX_IMAGE; i++)
+            if (L->images[i].flags == 0)
+            {
+                /* Store the texture. */
+
+                L->images[i].texture = o;
+                L->images[i].w       = w;
+                L->images[i].h       = h;
+                L->images[i].flags   = LP_FLAG_LOADED;
+
+                /* Succeed. */
+
+                return i;
+            }
+
+        /* Fail. */
+
+        glDeleteTextures(1, &o);
+    }
+    return -1;
 }
 
-int lp_remove_image(lightprobe *L, const char *path)
+void lp_del_image(lightprobe *L, int i)
 {
-    if (L && path)
-        if (remove_image(L, path))
-            return 1;
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
 
-    return 0;
+    /* Release the image. */
+
+    if (L->images[i].flags & LP_FLAG_LOADED)
+    {
+        glDeleteTextures(1, &L->images[i].texture);
+        memset(L->images + i, 0, sizeof (struct image));
+    }
+}
+
+/*----------------------------------------------------------------------------*/
+
+int lp_get_image_width(lightprobe *L, int i)
+{
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+    return L->images[i].w;
+}
+
+int lp_get_image_height(lightprobe *L, int i)
+{
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+    return L->images[i].h;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -481,86 +404,43 @@ int lp_remove_image(lightprobe *L, const char *path)
 /* The image bit field represents various togglable options. The following    */
 /* functions provide bit-wise operations for the manipulation of these.       */
 
-void lp_set_image_flags(lightprobe *L, const char *path, int f)
+void lp_set_image_flags(lightprobe *L, int i, int f)
 {
-    image *c;
-
-    if (L && (c = find_image(L, path)))
-        c->flags |=  f;
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+    L->images[i].flags |=  f;
 }
 
-void lp_clr_image_flags(lightprobe *L, const char *path, int f)
+void lp_clr_image_flags(lightprobe *L, int i, int f)
 {
-    image *c;
-
-    if (L && (c = find_image(L, path)))
-        c->flags &= ~f;
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+    L->images[i].flags |= ~f;
 }
 
-int lp_get_image_flags(lightprobe *L, const char *path)
+int  lp_get_image_flags(lightprobe *L, int i)
 {
-    image *c;
-
-    if (L && (c = find_image(L, path)))
-        return c->flags;
-
-    return 0;
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+    return L->images[i].flags;
 }
 
 /*----------------------------------------------------------------------------*/
 
-int lp_get_image_width(lightprobe *L, const char *path)
+void  lp_set_image_value(lightprobe *L, int i, int k, float v)
 {
-    image *c;
-
-    if (L && (c = find_image(L, path)))
-        return c->w;
-
-    return 0;
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+    assert(0 <= k && k < LP_MAX_VALUE);
+    L->images[i].values[k] = v;
 }
 
-int lp_get_image_height(lightprobe *L, const char *path)
+float lp_get_image_value(lightprobe *L, int i, int k)
 {
-    image *c;
-
-    if (L && (c = find_image(L, path)))
-        return c->h;
-
-    return 0;
-}
-
-/*----------------------------------------------------------------------------*/
-
-void lp_move_circle(lightprobe *L, float x, float y, float r)
-{
-    image *c;
-
-    if (L)
-        for (c = L->first; c; c = c->next)
-            if (c->flags & LP_IMAGE_ACTIVE)
-            {
-                c->circle_x += x;
-                c->circle_y += y;
-                c->circle_r += r;
-            }
-
-    printf("Circle %f %f %f\n", x, y, r);
-}
-
-void lp_move_sphere(lightprobe *L, float e, float a, float r)
-{
-    image *c;
-
-    if (L)
-        for (c = L->first; c; c = c->next)
-            if (c->flags & LP_IMAGE_ACTIVE)
-            {
-                c->sphere_e += e;
-                c->sphere_a += a;
-                c->sphere_r += r;
-            }
-
-    printf("Sphere %f %f %f\n", e, a, r);
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+    assert(0 <= k && k < LP_MAX_VALUE);
+    return L->images[i].values[k];
 }
 
 /*----------------------------------------------------------------------------*/
@@ -584,7 +464,7 @@ static void render_circle_setup(lightprobe *L, int w, int h,
     glUseProgram(L->circle_program);
 }
 
-static void render_circle_image(image *c)
+static void render_circle_image(struct image *c)
 {
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
 
@@ -601,18 +481,17 @@ static void render_circle_image(image *c)
 void lp_render_circle(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
+    int i;
+
+    assert(L);
+
     printf("render_circle %d %d %d %f %f %f %f\n", f, w, h, x, y, e, z);
 
-    if (L)
-    {
-        image *c;
-       
-        render_circle_setup(L, w, h, x, y, e, z);
+    render_circle_setup(L, w, h, x, y, e, z);
 
-        for (c = L->first; c; c = c->next)
-            if ((c->flags & LP_IMAGE_HIDDEN) == 0)
-                render_circle_image(c);
-    }
+    for (i = 0; i < LP_MAX_IMAGE; i++)
+        if (L->images[i].flags & LP_FLAG_LOADED)
+            render_circle_image(L->images + i);
 }
 
 /*----------------------------------------------------------------------------*/
