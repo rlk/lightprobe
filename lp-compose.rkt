@@ -456,7 +456,7 @@
                         [label "Save As..."]
                         [callback do-save-as]
                         [shortcut #\s]
-                        [shortcut-prefix (get-default-shortcut-prefix)])
+                        [shortcut-prefix (get-shifted-shortcut-prefix)])
 
         (new separator-menu-item% [parent file])
 
@@ -468,7 +468,7 @@
                         [label "Export Sphere Map..."]
                         [callback do-export-sphere]
                         [shortcut #\e]
-                        [shortcut-prefix (get-default-shortcut-prefix)]))))
+                        [shortcut-prefix (get-shifted-shortcut-prefix)]))))
 
   ;;----------------------------------------------------------------------------
 
