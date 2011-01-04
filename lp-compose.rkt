@@ -15,6 +15,13 @@
 (module lp-compose racket/gui
   
   ;;----------------------------------------------------------------------------
+
+  (define default-path (string->path "Untitled"))
+
+  (define lightprobe #f)
+  (define lightprobe-path default-path)
+
+  ;;----------------------------------------------------------------------------
   ;; Rendering and image processing are performed by the graphics hardware via
   ;; the OpenGL Shading Language. This is managed by the lightprobe library, a
   ;; dynamically-loaded native code module written in C. The following FFI
@@ -32,9 +39,9 @@
   (define lp-free
     (lp-ffi "lp_free" (_fun _pointer -> _void)))
 
-  (define lp-append-image
+  (define lp-add-image
     (lp-ffi "lp_add_image" (_fun _pointer _path -> _int)))
-  (define lp-remove-image
+  (define lp-del-image
     (lp-ffi "lp_del_image" (_fun _pointer _int  -> _void)))
 
   (define lp-get-image-width
@@ -76,32 +83,19 @@
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
 
   (define lp-export-cube
-    (lp-ffi "lp_export_cube"    (_fun _pointer _path -> _bool)))
+    (lp-ffi "lp_export_cube"   (_fun _pointer _path -> _bool)))
   (define lp-export-sphere
-    (lp-ffi "lp_export_sphere"  (_fun _pointer _path -> _bool)))
+    (lp-ffi "lp_export_sphere" (_fun _pointer _path -> _bool)))
 
   ;;----------------------------------------------------------------------------
 
-  (define (lp-is-image-visible? i)
-    (zero? (bitwise-and lp-image-hidden (lp-get-image-flags lightprobe i))))
+  (define (lp-is-image? i b)
+    (and (not (negative? i))
+         (not (zero? (bitwise-and b (lp-get-image-flags lightprobe i))))))
 
-  ;;----------------------------------------------------------------------------
-
-  (define lightprobe #f)
-  (define lightprobe-path (string->path "Untitled"))
-
-  (define (set-lightprobe! new path)
-    (if new
-        (begin
-          (set-lightprobe-path! path)
-          (lp-free lightprobe)
-          (set!    lightprobe new)
-          (void))
-        (void)))
-
-  (define (set-lightprobe-path! path)
-    (set! lightprobe-path path)
-    (send root set-label (path->string path)))
+  (define (lp-is-image-loaded? i) (lp-is-image? i lp-image-loaded))
+  (define (lp-is-image-active? i) (lp-is-image? i lp-image-active))
+  (define (lp-is-image-hidden? i) (lp-is-image? i lp-image-hidden))
 
   ;;----------------------------------------------------------------------------
   ;; The Apple HIG defines a preferences panel with all radio and check boxes
@@ -150,7 +144,7 @@
 
   (define packed-button%
     (class button%
-      (super-new [vert-margin 0] [horiz-margin 0])))
+      (super-new [vert-margin 0] [horiz-margin 0] [stretchable-width #t])))
 
   ;;----------------------------------------------------------------------------
   ;; drop-list-box is a list-box that accepts drag-and-drop events, allowing a
@@ -182,25 +176,19 @@
 
   ;;----------------------------------------------------------------------------
   ;; The lightprobe viewer has two modes: Image view and Environment view.
-  ;; The view-mode preference group manages the current mode state, with the
-  ;; lightprobe canvas as observer.
+  ;; The view-mode preference group manages the current mode state.
 
   (define view-mode%
     (class preferences-group%
       (super-new [fraction 0.4])
-      (init-field observer)
-
-      ; Interaction callback
-
-      (define (set control event)
-        (send observer refresh))
+      (init-field notify)
 
       ; GUI sub-elements
       
       (define label (new message%          [parent this]
                                            [label "Mode:"]))
       (define radio (new simple-radio-box% [parent this]
-                                           [callback set]
+                                           [callback (lambda x notify)]
                                            [choices '("Image" "Environment")]))
       ; Public interface
 
@@ -209,18 +197,13 @@
 
   ;;----------------------------------------------------------------------------
   ;; The lightprobe viewer has a number of rendering options. The view-options
-  ;; preference group manages these, with the lightprobe canvas as observer.
+  ;; preference group manages these.
 
   (define view-options%
     (class preferences-group%
       (super-new [fraction 0.4])
-      (init-field observer)
+      (init-field notify)
       
-      ; Interaction callback
-
-      (define (do-grid control event) (set-grid (send control get-value)))
-      (define (do-res  control event) (set-res  (send control get-value)))
-
       ; GUI sub-elements
       
       (define label (new message%       [parent this]
@@ -228,25 +211,16 @@
       (define group (new vertical-pane% [parent this]
                                         [alignment '(left top)]))
       (define grid  (new check-box%     [parent group]
-                                        [callback do-grid]
-                                        [label "Show Grid"]))
+                                        [label "Show Grid"]
+                                        [callback (lambda x notify)]))
       (define res   (new check-box%     [parent group]
-                                        [callback do-res]
-                                        [label "Show Resolution"]))
+                                        [label "Show Resolution"]
+                                        [callback (lambda x notify)]))
 
       ; Public interface
 
-      (define/public (set-grid b)
-        (send grid set-value b)
-        (send observer refresh))
-      (define/public (get-grid)
-        (send grid get-value))
-
-      (define/public (set-res b)
-        (send res set-value b)
-        (send observer refresh))
-      (define/public (get-res)
-        (send res get-value))))
+      (define/public (get-grid) (send grid get-value))
+      (define/public (get-res)  (send res  get-value))))
 
   ;;----------------------------------------------------------------------------
   ;; The lightprobe viewer has a few variables that tune the rendering. The
@@ -255,26 +229,28 @@
   (define view-values%
     (class horizontal-pane%
       (super-new)
-      (init-field observer)
+      (init-field notify)
 
-      (define (do-expo control event) (send observer refresh))
-      (define (do-zoom control event) (send observer reshape))
+      ; GUI sub-elements
 
       (define expo (new slider% [parent this]
                                 [label "Exposure"]
                                 [min-value  0]
                                 [max-value  8]
-                                [callback do-expo]
-                                [style '(horizontal plain)]))
+                                [style '(horizontal plain)]
+                                [callback (lambda x notify)]))
       (define zoom (new slider% [parent this]
                                 [label "Zoom"]
                                 [min-value -5]
                                 [max-value  5]
-                                [callback do-zoom]
-                                [style '(horizontal plain)]))
+                                [style '(horizontal plain)]
+                                [callback (lambda x notify)]))
+
+      ; Public interface
 
       (define/public (get-expo)
         (exact->inexact (send expo get-value)))
+
       (define/public (get-zoom)
         (let ((z (expt 2 (send zoom get-value))))
           (exact->inexact z)))
@@ -288,46 +264,45 @@
   (define image-list%
     (class horizontal-pane%
       (super-new)
-      (init-field observer)
+      (init-field notify)
 
-      ; Private interface
+      ; The "index" is the image's GUI list-box position.
 
-      (define (get-selection-list)
-        (map (lambda (i) (send images get-data i))
-                         (send images get-selections)))
+      (define (get-index string)
+        (send images find-string string))
+      
+      ; The "descr" is the image's lightprobe API descriptor.
+    
+      (define (get-descr string)
+        (send images get-data (get-index string)))
 
-      (define (get-index path)
-        (send images find-string (path->string path)))
-
-      (define (append-path path)
-        (send images append (path->string path) path))
-
-      (define (remove-path path)
-        (let ((i (get-index path)))
-          (if i (send images delete i) (void))))
+      (define (set-flag string flag)
+        (lp-set-image-flags lightprobe (get-descr string) flag) (void))
+      (define (clr-flag string flag)
+        (lp-clr-image-flags lightprobe (get-descr string) flag) (void))
 
       ; Interaction callbacks
 
+      (define (get-file-strings)
+        (map path->string (or (get-file-list) '())))
+
       (define (do-add  control event)
-        (map (lambda (p) (send this  add-image p)) (or (get-file-list) '())))
-      (define (do-rem  control event)
-        (map (lambda (p) (send this  rem-image p)) (get-selection-list)))
+        (map (lambda (s) (send this  add-image s)) (get-file-strings)))
+      (define (do-del  control event)
+        (map (lambda (s) (send this  del-image s)) (get-selected-list)))
       (define (do-hide control event)
-        (map (lambda (p) (send this hide-image p)) (get-selection-list)))
+        (map (lambda (s) (set-flag s lp-image-hidden)) (get-selected-list)))
       (define (do-show control event)
-        (map (lambda (p) (send this show-image p)) (get-selection-list)))
+        (map (lambda (s) (clr-flag s lp-image-hidden)) (get-selected-list)))
 
       ; Set the 'active' flag on all images based on selection status.
 
       (define (set control event)
-        (let loop ((n (send images get-number)) (i 0))
-          (if (< i n)
-              (let ((path (send images get-data i)))
-                (if (send images is-selected? i)
-                    (lp-set-image-flags lightprobe path lp-image-active)
-                    (lp-clr-image-flags lightprobe path lp-image-active))
-                (loop n (+ i 1)))
-              (void))))
+        (map (lambda (s)
+               (if (send images is-selected? (get-index s))
+                   (set-flag s lp-image-active)
+                   (clr-flag s lp-image-active)))
+             (get-loaded-list)))
 
       ; GUI sub-elements
 
@@ -340,94 +315,100 @@
                                           [style '(extended)]))
 
       (define add  (instantiate packed-button% ("Add"    buttons do-add)))
-      (define rem  (instantiate packed-button% ("Remove" buttons do-rem)))
+      (define rem  (instantiate packed-button% ("Remove" buttons do-del)))
       (define hide (instantiate packed-button% ("Hide"   buttons do-hide)))
       (define show (instantiate packed-button% ("Show"   buttons do-show)))
 
-      ; Add (load) the named image and ping the observer.
+      ; Add (load) the named image.
 
-      (define/public (add-image path)
-        (if (lp-append-image lightprobe path)
-          (begin
-            (append-path path)
-            (send observer reshape) #t) #f))
+      (define/public (add-image string)
+        (let ((d (lp-add-image lightprobe string)))
 
-      ; Remove (unload) the named image and ping the observer.
+          (if (lp-is-image-loaded? d)
+              (begin (send images append string d)
+                     (notify))
+              (void))))
 
-      (define/public (rem-image path)
-        (if (lp-remove-image lightprobe path)
-          (begin
-            (remove-path path)
-            (send observer reshape) #t) #f))
+      ; Remove (unload) the named image.
 
-      ; Set the 'hidden' flag on the named image and ping the observer.
+      (define/public (del-image string)
+        (begin (lp-del-image lightprobe (get-descr string))
+               (send images delete      (get-index string))
+               (notify)))
 
-      (define/public (hide-image path)
-        (lp-set-image-flags lightprobe path lp-image-hidden)
-        (send observer reshape))
-
-      ; Clear the 'hidden' flag on the named image and ping the observer.
-
-      (define/public (show-image path)
-        (lp-clr-image-flags lightprobe path lp-image-hidden)
-        (send observer reshape))
+      ; Write the current image state to the named file.
 
       (define/public (save-file path)
-        )
+        #f)
+
+      ; Load the named file to the current image state.
 
       (define/public (load-file path)
-        )
+        #f)
 
-      ; Return a list of path names of all currently-loaded images.
+      ; Unload all currently-loaded images.
 
-      (define/public (get-path-list)
-        (build-list (send images get-number)
-                    (lambda (i) (send images get-data i))))))
+      (define/public (init-file)
+        #f)
+
+      ; Return a list of path strings of all currently-selected images.
+
+      (define/public (get-selected-list)
+        (map (lambda (i) (send images get-string i))
+                         (send images get-selections)))
+
+      ; Return a list of path strings of all currently-loaded images.
+
+      (define/public (get-loaded-list)
+        (build-list   (send images get-number)
+          (lambda (i) (send images get-string i))))))
 
   ;;----------------------------------------------------------------------------
 
   (define lp-menu-bar%
     (class menu-bar%
       (super-new)
-
-      (define (get-shifted-shortcut-prefix)
-        (cons 'shift (get-default-shortcut-prefix)))
-
-      ; File state handlers
-
-      (define (save path)
-        (set-lightprobe-path! path)
-        (lp-save lightprobe   path))
+      (init-field save-file)
+      (init-field load-file)
+      (init-field init-file)
 
       ; File / New
 
       (define (do-new control event)
-        (set-lightprobe! (lp-init) (string->path "Untitled")))
+        (set! lightprobe-path default-path)
+        (init-file))
+
+      ; File Save
+
+      (define (do-save control event)
+        (save-file lightprobe-path))
 
       ; File / Open
 
       (define (do-open control event)
         (let ((path (get-file)))
           (if path
-            (set-lightprobe! (lp-open path) path) #f)))
-
-      ; File Save
-
-      (define (do-save control event)
-        (save lightprobe-path))
+              (begin
+                (set! lightprobe-path path)
+                (init-file)
+                (load-file lightprobe-path))
+              (void))))
 
       ; File / Save As...
 
       (define (do-save-as control event)
         (let ((path (put-file)))
           (if path
-            (save path) #f)))
+              (begin
+                (set! lightprobe-path path)
+                (save-file lightprobe-path))
+              (void))))
 
       ; File / Export Cube...
 
       (define (do-export-cube control event)
         (let ((path (put-file)))
-          (if path (lp-export-cube lightprobe path) #f)))
+          (if path (lp-export-cube   lightprobe path) #f)))
 
       ; File / Export Sphere...
 
@@ -436,6 +417,9 @@
           (if path (lp-export-sphere lightprobe path) #f)))
 
       ; Menus and menu items.
+
+      (define (get-shifted-shortcut-prefix)
+        (cons 'shift (get-default-shortcut-prefix)))
 
       (let ((file (new menu% [parent this] [label "File"])))
 
@@ -515,7 +499,7 @@
           (void)))
 
       (define/public (reshape)
-        (let* ((ps (filter lp-is-image-visible? (get-paths)))
+        (let* ((ps (filter (not lp-is-image-hidden?) (get-paths)))
 
                (ws (map (lambda (p) (lp-get-image-width  lightprobe p)) ps))
                (hs (map (lambda (p) (lp-get-image-height lightprobe p)) ps))
@@ -536,14 +520,14 @@
   ;; The lp-frame is the toplevel window of the application, and the overall
   ;; organizing structure through which all state changes flow. All GUI sub-
   ;; groups are instantiated as members and a variety of anonymous functions
-  ;; a closed within this scope, providing cross-cutting access between sub-
-  ;; elements of the application.
+  ;; are closed within this scope, providing cross-cutting access between
+  ;; sub-elements of the application.
 
   (define lp-frame%
     (class drop-frame%
       (super-new [label "Lightprobe Composer"]
-                 [drop-callback (lambda (path)
-                                  (send images add-image path))])
+                 [drop-callback
+                  (lambda (path) (send images add-image (path->string path)))])
 
       ; Layout panes
 
@@ -560,24 +544,44 @@
 
       ; GUI elements
 
-      (define menus (new lp-menu-bar% [parent this]))
+      (define menus
+        (new lp-menu-bar%
+             [parent this]
+             [save-file (lambda (path) (send images load-file path))]
+             [load-file (lambda (path) (send images open-file path))]
+             [init-file (lambda ()     (send images init-file))]))
 
       (define canvas
         (new lp-canvas%
-             [parent     mid]
+             [parent mid]
              [min-width  640]
              [min-height 480]
+             [get-paths (lambda () (send images  get-loaded-list))]
              [get-mode  (lambda () (send mode    get-mode))]
-             [get-paths (lambda () (send images  get-path-list))]
              [get-expo  (lambda () (send values  get-expo))]
              [get-zoom  (lambda () (send values  get-zoom))]
              [get-grid  (lambda () (send options get-grid))]
              [get-res   (lambda () (send options get-res))]))
 
-      (define images  (new image-list%   [parent img] [observer canvas]))
-      (define mode    (new view-mode%    [parent opt] [observer canvas]))
-      (define options (new view-options% [parent opt] [observer canvas]))
-      (define values  (new view-values%  [parent bot] [observer canvas]))))
+      (define images
+        (new image-list%
+             [parent img]
+             [notify    (lambda () (send canvas reshape))]))
+
+      (define mode
+        (new view-mode%
+             [parent opt]
+             [notify    (lambda () (send canvas reshape))]))
+
+      (define options
+        (new view-options%
+             [parent opt]
+             [notify    (lambda () (send canvas refresh))]))
+
+      (define values
+        (new view-values%
+             [parent bot]
+             [notify    (lambda () (send canvas refresh))]))))
   
   ;;----------------------------------------------------------------------------
 
@@ -585,10 +589,14 @@
 
   (define root (new lp-frame%))
   
-  ;; Show the application window.
+  ;; Show the application window, activating the OpenGL context.
 
   (send root show #t)
 
-  ;; Start up with a new document.
+  ;; With the OpenGL context active, instantiate the lightprobe.
 
-  (set-lightprobe! (lp-init) (string->path "Untitled")))
+  (set! lightprobe (lp-init)))
+
+  ;;----------------------------------------------------------------------------
+
+

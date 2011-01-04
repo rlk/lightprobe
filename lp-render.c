@@ -85,7 +85,7 @@ static void *tifread(const char *path, int *w, int *h)
 
 /* Write the contents of a buffer to a 4-channel 32-bit floating point TIFF   */
 /* image.                                                                     */
-
+#if 0
 static void tifwrite(const char *path, int w, int h, void *p)
 {
     TIFF *T = 0;
@@ -112,7 +112,7 @@ static void tifwrite(const char *path, int w, int h, void *p)
         TIFFClose(T);
     }
 }
-
+#endif
 /* Load the named TIFF image into a 32-bit floating point OpenGL rectangular  */
 /* texture. Release the image buffer after loading, and return the texture    */
 /* object.                                                                    */
@@ -226,6 +226,10 @@ static int check_program_log(GLuint program)
 
 /*----------------------------------------------------------------------------*/
 
+/* Prepare a GLSL shader, taking it from source coude to usable GL object.    */
+/* Receive the shader's type and source path.  Load and compile it.  Report   */
+/* any errors in the log, and return 0 on failure.                            */
+
 static GLuint load_shader(GLenum type, const char *path)
 {
     /* Load the named shader source file. */
@@ -253,6 +257,11 @@ static GLuint load_shader(GLenum type, const char *path)
     return 0;
 }
 
+/* Prepare a GLSL program, taking it all the way from source code to usable   */
+/* GL object.  Receive the path names of vertex and fragment program source   */
+/* files.  Read, compile, and link these into a GLSL program object, checking */
+/* logs and reporting any errors.  Clean up and return 0 on failure.          */
+
 static GLuint load_program(const char *path_vert, const char *path_frag)
 {
     /* Load the shaders. */
@@ -278,10 +287,34 @@ static GLuint load_program(const char *path_vert, const char *path_frag)
         else
             glDeleteProgram(program);
     }
+
+    /* Fail. */
+
+    glDeleteShader(shader_frag);
+    glDeleteShader(shader_vert);
+
     return 0;
 }
 
+/* Delete the given GLSL program object.  Delete any shaders attached to it.  */
+
+static void free_program(GLuint program)
+{
+    GLuint  shaders[2];
+    GLsizei count;
+
+    glGetAttachedShaders(program, 2, &count, shaders);
+
+    if (count > 0) glDeleteShader(shaders[0]);
+    if (count > 1) glDeleteShader(shaders[1]);
+
+    glDeleteProgram(program);
+}
+
 /*----------------------------------------------------------------------------*/
+
+/* Allocate and initialize a new, empty lightprobe object. Initialize all GL  */
+/* state needed to operate upon the input and render the output.              */
 
 lightprobe *lp_init()
 {
@@ -302,6 +335,9 @@ lightprobe *lp_init()
     return L;
 }
 
+/* Release a lightprobe object and all state associated with it.  Unload any  */
+/* images and delete all OpenGL state.                                        */
+
 void lp_free(lightprobe *L)
 {
     int i;
@@ -310,6 +346,9 @@ void lp_free(lightprobe *L)
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
         lp_del_image(L, i);
+
+    free_program(L->circle_program);
+    free_program(L->sphere_program);
 
     free(L);
 }
@@ -327,7 +366,6 @@ int lp_export_sphere(lightprobe *L, const char *path)
     printf("Export Sphere Map %s\n", path);
     return 1;
 }
-
 
 /*----------------------------------------------------------------------------*/
 
