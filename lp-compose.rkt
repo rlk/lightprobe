@@ -97,6 +97,8 @@
   (define (lp-is-image-active? i) (lp-is-image? i lp-image-active))
   (define (lp-is-image-hidden? i) (lp-is-image? i lp-image-hidden))
 
+  (define (lp-is-image-visible? i) (not (lp-is-image-hidden? i)))
+
   ;;----------------------------------------------------------------------------
   ;; The Apple HIG defines a preferences panel with all radio and check boxes
   ;; vertically aligned, with a top-right-justified label to the left of each
@@ -188,7 +190,7 @@
       (define label (new message%          [parent this]
                                            [label "Mode:"]))
       (define radio (new simple-radio-box% [parent this]
-                                           [callback (lambda x notify)]
+                                           [callback (lambda x (notify))]
                                            [choices '("Image" "Environment")]))
       ; Public interface
 
@@ -212,10 +214,10 @@
                                         [alignment '(left top)]))
       (define grid  (new check-box%     [parent group]
                                         [label "Show Grid"]
-                                        [callback (lambda x notify)]))
+                                        [callback (lambda x (notify))]))
       (define res   (new check-box%     [parent group]
                                         [label "Show Resolution"]
-                                        [callback (lambda x notify)]))
+                                        [callback (lambda x (notify))]))
 
       ; Public interface
 
@@ -238,13 +240,13 @@
                                 [min-value  0]
                                 [max-value  8]
                                 [style '(horizontal plain)]
-                                [callback (lambda x notify)]))
+                                [callback (lambda x (notify))]))
       (define zoom (new slider% [parent this]
                                 [label "Zoom"]
                                 [min-value -5]
                                 [max-value  5]
                                 [style '(horizontal plain)]
-                                [callback (lambda x notify)]))
+                                [callback (lambda x (notify))]))
 
       ; Public interface
 
@@ -268,41 +270,54 @@
 
       ; The "index" is the image's GUI list-box position.
 
-      (define (get-index string)
-        (send images find-string string))
+      (define (get-indices)
+        (build-list (send images get-number) values))
+
+      (define (get-index s)
+        (send images find-string s))
       
       ; The "descr" is the image's lightprobe API descriptor.
     
-      (define (get-descr string)
-        (send images get-data (get-index string)))
+      (define (index->descr i) (send images get-data i))
 
-      (define (set-flag string flag)
-        (lp-set-image-flags lightprobe (get-descr string) flag) (void))
-      (define (clr-flag string flag)
-        (lp-clr-image-flags lightprobe (get-descr string) flag) (void))
+      (define (get-descrs) (map index->descr (get-indices)))
+      (define (get-descr s)    (index->descr (get-index s)))
 
       ; Interaction callbacks
 
-      (define (get-file-strings)
-        (map path->string (or (get-file-list) '())))
-
       (define (do-add  control event)
-        (map (lambda (s) (send this  add-image s)) (get-file-strings)))
+        (map (lambda (p)
+               (send this add-image p))
+             (or (get-file-list) '()))
+        (notify))
+
       (define (do-del  control event)
-        (map (lambda (s) (send this  del-image s)) (get-selected-list)))
+        (map (lambda (i)
+               (send this del-image i))
+             (send images get-selections))
+        (notify))
+
       (define (do-hide control event)
-        (map (lambda (s) (set-flag s lp-image-hidden)) (get-selected-list)))
+        (map (lambda (i)
+               (lp-set-image-flags lightprobe (index->descr i) lp-image-hidden))
+             (send images get-selections))
+        (notify))
+
       (define (do-show control event)
-        (map (lambda (s) (clr-flag s lp-image-hidden)) (get-selected-list)))
+        (map (lambda (i)
+               (lp-clr-image-flags lightprobe (index->descr i) lp-image-hidden))
+             (send images get-selections))
+        (notify))
 
       ; Set the 'active' flag on all images based on selection status.
 
       (define (set control event)
-        (map (lambda (s)
-               (if (send images is-selected? (get-index s))
-                   (set-flag s lp-image-active)
-                   (clr-flag s lp-image-active)))
-             (get-loaded-list)))
+        (map (lambda (i)
+               (let ((d (index->descr i)))
+                 (if (send images is-selected? i)
+                     (lp-set-image-flags lightprobe d lp-image-active)
+                     (lp-clr-image-flags lightprobe d lp-image-active))))
+             (get-indices)))
 
       ; GUI sub-elements
 
@@ -321,20 +336,21 @@
 
       ; Add (load) the named image.
 
-      (define/public (add-image string)
-        (let ((d (lp-add-image lightprobe string)))
+      (define/public (add-image path)
+        (let ((d (lp-add-image lightprobe path)))
 
           (if (lp-is-image-loaded? d)
-              (begin (send images append string d)
+              (begin (send images append (path->string path) d)
                      (notify))
               (void))))
 
       ; Remove (unload) the named image.
 
-      (define/public (del-image string)
-        (begin (lp-del-image lightprobe (get-descr string))
-               (send images delete      (get-index string))
-               (notify)))
+      (define/public (del-image i)
+        (let ((d (index->descr i)))
+          (begin (lp-del-image lightprobe d)
+                 (send images delete      i))
+          (notify)))
 
       ; Write the current image state to the named file.
 
@@ -351,17 +367,11 @@
       (define/public (init-file)
         #f)
 
-      ; Return a list of path strings of all currently-selected images.
-
-      (define/public (get-selected-list)
-        (map (lambda (i) (send images get-string i))
-                         (send images get-selections)))
-
       ; Return a list of path strings of all currently-loaded images.
 
-      (define/public (get-loaded-list)
-        (build-list   (send images get-number)
-          (lambda (i) (send images get-string i))))))
+      (define/public (get-visible-descrs)
+        (filter lp-is-image-visible? (get-descrs)))
+))
 
   ;;----------------------------------------------------------------------------
 
@@ -463,7 +473,7 @@
       (inherit refresh with-gl-context swap-gl-buffers)
 
       (init-field get-mode)
-      (init-field get-paths)
+      (init-field get-images)
       (init-field get-expo)
       (init-field get-zoom)
       (init-field get-grid)
@@ -499,19 +509,20 @@
           (void)))
 
       (define/public (reshape)
-        (let* ((ps (filter (not lp-is-image-hidden?) (get-paths)))
+        (let* ((ds (get-images))
 
-               (ws (map (lambda (p) (lp-get-image-width  lightprobe p)) ps))
-               (hs (map (lambda (p) (lp-get-image-height lightprobe p)) ps))
+               (ws (map (lambda (d) (lp-get-image-width  lightprobe d)) ds))
+               (hs (map (lambda (d) (lp-get-image-height lightprobe d)) ds))
 
-               (zoom (lambda (d) (inexact->exact (ceiling (* d (get-zoom))))))
+               (zoom (lambda (z) (inexact->exact (ceiling (* z (get-zoom))))))
 
                (w (if (empty? ws) 1 (zoom (apply max ws))))
                (h (if (empty? hs) 1 (zoom (apply max hs))))
                (x (get-x))
                (y (get-y)))
 
-          (send this init-auto-scrollbars w h x y)))
+          (send this init-auto-scrollbars w h x y)
+          (refresh)))
 
       (super-new (style '(gl hscroll vscroll)))))
 
@@ -526,8 +537,7 @@
   (define lp-frame%
     (class drop-frame%
       (super-new [label "Lightprobe Composer"]
-                 [drop-callback
-                  (lambda (path) (send images add-image (path->string path)))])
+                 [drop-callback (lambda (path) (send images add-image path))])
 
       ; Layout panes
 
@@ -556,12 +566,12 @@
              [parent mid]
              [min-width  640]
              [min-height 480]
-             [get-paths (lambda () (send images  get-loaded-list))]
-             [get-mode  (lambda () (send mode    get-mode))]
-             [get-expo  (lambda () (send values  get-expo))]
-             [get-zoom  (lambda () (send values  get-zoom))]
-             [get-grid  (lambda () (send options get-grid))]
-             [get-res   (lambda () (send options get-res))]))
+             [get-images (lambda () (send images  get-visible-descrs))]
+             [get-mode   (lambda () (send mode    get-mode))]
+             [get-expo   (lambda () (send values  get-expo))]
+             [get-zoom   (lambda () (send values  get-zoom))]
+             [get-grid   (lambda () (send options get-grid))]
+             [get-res    (lambda () (send options get-res))]))
 
       (define images
         (new image-list%
@@ -576,12 +586,12 @@
       (define options
         (new view-options%
              [parent opt]
-             [notify    (lambda () (send canvas refresh))]))
+             [notify    (lambda () (send canvas reshape))]))
 
       (define values
         (new view-values%
              [parent bot]
-             [notify    (lambda () (send canvas refresh))]))))
+             [notify    (lambda () (send canvas reshape))]))))
   
   ;;----------------------------------------------------------------------------
 
@@ -598,5 +608,3 @@
   (set! lightprobe (lp-init)))
 
   ;;----------------------------------------------------------------------------
-
-

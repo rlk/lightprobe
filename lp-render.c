@@ -60,8 +60,10 @@ static void *tifread(const char *path, int *w, int *h)
     
     if ((T = TIFFOpen(path, "r")))
     {
-        uint32 W, H, C, B, i, s = (uint32) TIFFScanlineSize(T);
-        
+        uint32 i, s = (uint32) TIFFScanlineSize(T);
+        uint32 W, H;
+        uint16 B, C;
+
         TIFFGetField(T, TIFFTAG_IMAGEWIDTH,      &W);
         TIFFGetField(T, TIFFTAG_IMAGELENGTH,     &H);
         TIFFGetField(T, TIFFTAG_BITSPERSAMPLE,   &B);
@@ -453,7 +455,7 @@ void lp_clr_image_flags(lightprobe *L, int i, int f)
 {
     assert(L);
     assert(0 <= i && i < LP_MAX_IMAGE);
-    L->images[i].flags |= ~f;
+    L->images[i].flags &= ~f;
 }
 
 int  lp_get_image_flags(lightprobe *L, int i)
@@ -528,7 +530,7 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
     render_circle_setup(L, w, h, x, y, e, z);
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
-        if (L->images[i].flags & LP_FLAG_LOADED)
+        if ((L->images[i].flags & LP_FLAG_HIDDEN) == 0)
             render_circle_image(L->images + i);
 }
 
