@@ -89,15 +89,21 @@
 
   ;;----------------------------------------------------------------------------
 
-  (define (lp-is-image? i b)
-    (and (not (negative? i))
-         (not (zero? (bitwise-and b (lp-get-image-flags lightprobe i))))))
+  (define (lp-is-image? d b)
+    (and (not (negative? d))
+         (not (zero? (bitwise-and b (lp-get-image-flags lightprobe d))))))
 
-  (define (lp-is-image-loaded? i) (lp-is-image? i lp-image-loaded))
-  (define (lp-is-image-active? i) (lp-is-image? i lp-image-active))
-  (define (lp-is-image-hidden? i) (lp-is-image? i lp-image-hidden))
+  (define (lp-is-image-loaded? d) (lp-is-image? d lp-image-loaded))
+  (define (lp-is-image-active? d) (lp-is-image? d lp-image-active))
+  (define (lp-is-image-hidden? d) (lp-is-image? d lp-image-hidden))
 
-  (define (lp-is-image-visible? i) (not (lp-is-image-hidden? i)))
+  (define (lp-is-image-visible? d) (not (lp-is-image-hidden? d)))
+
+  (define (lp-get-image-circle-x d)
+    (lp-get-image-value lightprobe d lp-circle-x))
+  (define (lp-set-image-circle-x d v)
+    (lp-set-image-value lightprobe d lp-circle-x v))
+
 
   ;;----------------------------------------------------------------------------
   ;; The Apple HIG defines a preferences panel with all radio and check boxes
@@ -355,7 +361,21 @@
       ; Write the current image state to the named file.
 
       (define/public (save-file path)
-        #f)
+        (let ((write-image
+               (lambda (i)
+                 (let* ((d (send images get-data   i))
+                        (s (send images get-string i))
+
+                        (f  (lp-get-image-flags lightprobe d))
+                        (cx (lp-get-image-value lightprobe d lp-circle-x))
+                        (cy (lp-get-image-value lightprobe d lp-circle-y))
+                        (cr (lp-get-image-value lightprobe d lp-circle-r))
+                        (se (lp-get-image-value lightprobe d lp-sphere-elevation))
+                        (sa (lp-get-image-value lightprobe d lp-sphere-azimuth))
+                        (sr (lp-get-image-value lightprobe d lp-sphere-roll))
+                             
+        (get-descrs))
+
 
       ; Load the named file to the current image state.
 
@@ -479,6 +499,12 @@
       (init-field get-grid)
       (init-field get-res)
 
+      (super-new (style '(gl hscroll vscroll)))
+
+      ; These functions compute the normalized offset of the top-left corner
+      ; of the visible portion of the canvas. This varies with the visible set
+      ; of images, the zoom level, and the scrollbar state.
+
       (define (get-x)
         (let-values (((x y) (send this get-view-start))
                      ((w h) (send this get-virtual-size)))
@@ -487,6 +513,10 @@
         (let-values (((x y) (send this get-view-start))
                      ((w h) (send this get-virtual-size)))
           (exact->inexact (/ y h))))
+
+      ; The on-paint function redraws the canvas.  This involves marshalling
+      ; all of the parameters maintained by other GUI elements and calling the
+      ; proper render function for the current view mode.
 
       (define/override (on-paint)
         (if lightprobe
@@ -508,6 +538,13 @@
                 (swap-gl-buffers))))
           (void)))
 
+      ; The reshape function is responsible for handling changes to the shape
+      ; of the canvas.  Beyond changes to the shape of the parent window, this
+      ; may occur in response to additions, deletions, and visibility changes
+      ; among the current set of loaded images.  The primary task is to ensure
+      ; that the scroll bars make sense given the content currently on display.
+      ; With this done, trigger a re-paint.
+
       (define/public (reshape)
         (let* ((ds (get-images))
 
@@ -522,9 +559,7 @@
                (y (get-y)))
 
           (send this init-auto-scrollbars w h x y)
-          (refresh)))
-
-      (super-new (style '(gl hscroll vscroll)))))
+          (refresh)))))
 
   ;;----------------------------------------------------------------------------
 
