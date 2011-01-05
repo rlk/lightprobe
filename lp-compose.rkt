@@ -34,10 +34,16 @@
   (define (lp-ffi str sig)
     (get-ffi-obj str lp-lib sig))
 
+  ;;----------------------------------------------------------------------------
+  ;; Lightprobe instantiation
+
   (define lp-init
     (lp-ffi "lp_init" (_fun          -> _pointer)))
   (define lp-free
     (lp-ffi "lp_free" (_fun _pointer -> _void)))
+
+  ;;----------------------------------------------------------------------------
+  ;; Image instantiation
 
   (define lp-add-image
     (lp-ffi "lp_add_image" (_fun _pointer _path -> _int)))
@@ -49,9 +55,8 @@
   (define lp-get-image-height
     (lp-ffi "lp_get_image_height" (_fun _pointer _int -> _int)))
 
-  (define lp-image-loaded 1)
-  (define lp-image-active 2)
-  (define lp-image-hidden 4)
+  ;;----------------------------------------------------------------------------
+  ;; Raw image flag accessors
 
   (define lp-set-image-flags
     (lp-ffi "lp_set_image_flags" (_fun _pointer _int _int -> _void)))
@@ -60,17 +65,16 @@
   (define lp-get-image-flags
     (lp-ffi "lp_get_image_flags" (_fun _pointer _int      -> _int)))
 
-  (define lp-circle-x         0)
-  (define lp-circle-y         1)
-  (define lp-circle-radius    2)
-  (define lp-sphere-elevation 3)
-  (define lp-sphere-azimuth   4)
-  (define lp-sphere-roll      5)
+  ;;----------------------------------------------------------------------------
+  ;; Raw image value accessors
 
   (define lp-set-image-value
     (lp-ffi "lp_set_image_value" (_fun _pointer _int _int _float -> _void)))
   (define lp-get-image-value
     (lp-ffi "lp_get_image_value" (_fun _pointer _int _int        -> _float)))
+
+  ;;----------------------------------------------------------------------------
+  ;; Rendering
 
   (define lp-render-grid 1)
   (define lp-render-res  2)
@@ -82,28 +86,45 @@
     (lp-ffi "lp_render_sphere" 
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
 
+  ;;----------------------------------------------------------------------------
+  ;; Export
+
   (define lp-export-cube
     (lp-ffi "lp_export_cube"   (_fun _pointer _path -> _bool)))
   (define lp-export-sphere
     (lp-ffi "lp_export_sphere" (_fun _pointer _path -> _bool)))
 
   ;;----------------------------------------------------------------------------
+  ;; Image flag accessors
 
   (define (lp-is-image? d b)
     (and (not (negative? d))
          (not (zero? (bitwise-and b (lp-get-image-flags lightprobe d))))))
 
-  (define (lp-is-image-loaded? d) (lp-is-image? d lp-image-loaded))
-  (define (lp-is-image-active? d) (lp-is-image? d lp-image-active))
-  (define (lp-is-image-hidden? d) (lp-is-image? d lp-image-hidden))
+  (define (lp-is-image-loaded? d) (lp-is-image? d 1))
+  (define (lp-is-image-active? d) (lp-is-image? d 2))
+  (define (lp-is-image-hidden? d) (lp-is-image? d 4))
 
   (define (lp-is-image-visible? d) (not (lp-is-image-hidden? d)))
 
-  (define (lp-get-image-circle-x d)
-    (lp-get-image-value lightprobe d lp-circle-x))
-  (define (lp-set-image-circle-x d v)
-    (lp-set-image-value lightprobe d lp-circle-x v))
+  ;;----------------------------------------------------------------------------
+  ;; Image value accessors
 
+  (define (lp-set-value d k v) (lp-set-image-value lightprobe d k v))
+  (define (lp-get-value d k)   (lp-get-image-value lightprobe d k))
+
+  (define (lp-set-circle-x         d v) (lp-set-value d 0 v))
+  (define (lp-get-circle-x         d)   (lp-get-value d 0))
+  (define (lp-set-circle-y         d v) (lp-set-value d 1 v))
+  (define (lp-get-circle-y         d)   (lp-get-value d 1))
+  (define (lp-set-circle-radius    d v) (lp-set-value d 2 v))
+  (define (lp-get-circle-radius    d)   (lp-get-value d 2))
+  (define (lp-set-sphere-elevation d v) (lp-set-value d 3 v))
+  (define (lp-get-sphere-elevation d)   (lp-get-value d 3))
+  (define (lp-set-sphere-azimuth   d v) (lp-set-value d 4 v))
+  (define (lp-get-sphere-azimuth   d)   (lp-get-value d 4))
+  (define (lp-set-sphere-roll      d v) (lp-set-value d 5 v))
+  (define (lp-get-sphere-roll      d)   (lp-get-value d 5))
 
   ;;----------------------------------------------------------------------------
   ;; The Apple HIG defines a preferences panel with all radio and check boxes
@@ -305,13 +326,13 @@
 
       (define (do-hide control event)
         (map (lambda (i)
-               (lp-set-image-flags lightprobe (index->descr i) lp-image-hidden))
+               (lp-set-image-flags lightprobe (index->descr i) 4))
              (send images get-selections))
         (notify))
 
       (define (do-show control event)
         (map (lambda (i)
-               (lp-clr-image-flags lightprobe (index->descr i) lp-image-hidden))
+               (lp-clr-image-flags lightprobe (index->descr i) 4))
              (send images get-selections))
         (notify))
 
@@ -321,8 +342,8 @@
         (map (lambda (i)
                (let ((d (index->descr i)))
                  (if (send images is-selected? i)
-                     (lp-set-image-flags lightprobe d lp-image-active)
-                     (lp-clr-image-flags lightprobe d lp-image-active))))
+                     (lp-set-image-flags lightprobe d 2)
+                     (lp-clr-image-flags lightprobe d 2))))
              (get-indices)))
 
       ; GUI sub-elements
@@ -347,8 +368,9 @@
 
           (if (lp-is-image-loaded? d)
               (begin (send images append (path->string path) d)
-                     (notify))
-              (void))))
+                     (notify)
+                     #t)
+              #f)))
 
       ; Remove (unload) the named image.
 
@@ -364,23 +386,43 @@
         (let ((write-image
                (lambda (i)
                  (let* ((d (send images get-data   i))
-                        (s (send images get-string i))
+                        (s (send images get-string i)))
 
-                        (f  (lp-get-image-flags lightprobe d))
-                        (cx (lp-get-image-value lightprobe d lp-circle-x))
-                        (cy (lp-get-image-value lightprobe d lp-circle-y))
-                        (cr (lp-get-image-value lightprobe d lp-circle-r))
-                        (se (lp-get-image-value lightprobe d lp-sphere-elevation))
-                        (sa (lp-get-image-value lightprobe d lp-sphere-azimuth))
-                        (sr (lp-get-image-value lightprobe d lp-sphere-roll))
-                             
-        (get-descrs))
+                   (printf "~s ~s ~s ~s ~s ~s ~s ~s~n"
+                           (lp-get-image-flags lightprobe d)
+                           (lp-get-circle-x         d)
+                           (lp-get-circle-y         d)
+                           (lp-get-circle-radius    d)
+                           (lp-get-sphere-elevation d)
+                           (lp-get-sphere-azimuth   d)
+                           (lp-get-sphere-roll      d) s)))))
 
+          (with-output-to-file path
+            (lambda () (map write-image (get-indices))))))
 
       ; Load the named file to the current image state.
 
       (define/public (load-file path)
-        #f)
+        (let ((parse-image (lambda (line)
+                             (let* ((in (open-input-string line))
+                                    (f  (read in))
+                                    (cx (read in))
+                                    (cy (read in))
+                                    (cr (read in))
+                                    (se (read in))
+                                    (sa (read in))
+                                    (sr (read in))
+                                    (nm (read in)))
+        
+                              (add-image (string->path nm))))))
+
+          (let loop ((in (open-input-file path)))
+            (let ((line (read-line in)))
+              (if (string? line)
+                  (begin
+                    (parse-image line)
+                    (loop))
+                  (void))))))
 
       ; Unload all currently-loaded images.
 
@@ -592,8 +634,8 @@
       (define menus
         (new lp-menu-bar%
              [parent this]
-             [save-file (lambda (path) (send images load-file path))]
-             [load-file (lambda (path) (send images open-file path))]
+             [save-file (lambda (path) (send images save-file path))]
+             [load-file (lambda (path) (send images load-file path))]
              [init-file (lambda ()     (send images init-file))]))
 
       (define canvas
