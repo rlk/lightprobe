@@ -48,12 +48,55 @@ struct lightprobe
 };
 
 /*----------------------------------------------------------------------------*/
+/* Determine the proper OpenGL interal format, external format, and data type */
+/* for an image with c channels and b bits per channel.  Punt to c=4 b=8.     */
 
-/* Load the contents of a 4-channel 32-bit floating point TIFF image to a     */
-/* newly-allocated buffer.  Return the buffer and size.  Return 0 if the      */
-/* named image doesn't match the expected format.                             */
+static GLenum internal_form(int b, int c)
+{
+    if      (b == 32)
+    {
+        if      (c == 1) return GL_R32F;
+        else if (c == 2) return GL_RG32F;
+        else if (c == 3) return GL_RGB32F;
+        else             return GL_RGBA32F;
+    }
+    else if (b == 16)
+    {
+        if      (c == 1) return GL_LUMINANCE16;
+        else if (c == 2) return GL_LUMINANCE16_ALPHA16;
+        else if (c == 3) return GL_RGB16;
+        else             return GL_RGBA16;
+    }
+    else
+    {
+        if      (c == 1) return GL_LUMINANCE;
+        else if (c == 2) return GL_LUMINANCE_ALPHA;
+        else if (c == 3) return GL_RGB;
+        else             return GL_RGBA;
+    }
+}
 
-static void *tifread(const char *path, int *w, int *h)
+static GLenum external_form(int c)
+{
+    if      (c == 1) return GL_LUMINANCE;
+    else if (c == 2) return GL_LUMINANCE_ALPHA;
+    else if (c == 3) return GL_RGB;
+    else             return GL_RGBA;
+}
+
+static GLenum external_type(int b)
+{
+    if      (b == 32) return GL_FLOAT;
+    else if (b == 16) return GL_UNSIGNED_SHORT;
+    else              return GL_UNSIGNED_BYTE;
+}
+
+/*----------------------------------------------------------------------------*/
+
+/* Load the contents of a TIFF image to a newly-allocated buffer.  Return the */
+/* buffer and its configuration.                                              */
+
+static void *tifread(const char *path, int *w, int *h, int *c, int *b)
 {
     TIFF *T = 0;
     void *p = 0;
@@ -69,16 +112,15 @@ static void *tifread(const char *path, int *w, int *h)
         TIFFGetField(T, TIFFTAG_BITSPERSAMPLE,   &B);
         TIFFGetField(T, TIFFTAG_SAMPLESPERPIXEL, &C);
 
-        if (C == 4 && B == 32)
-        {
-            if ((p = malloc(H * s)))
-            {         
-                for (i = 0; i < H; ++i)
-                    TIFFReadScanline(T, (uint8 *) p + i * s, i, 0);
-                    
-                *w = (int) W;
-                *h = (int) H;
-            }
+        if ((p = malloc(H * s)))
+        {         
+            for (i = 0; i < H; ++i)
+                TIFFReadScanline(T, (uint8 *) p + i * s, i, 0);
+
+            *w = (int) W;
+            *h = (int) H;
+            *b = (int) B;
+            *c = (int) C;
         }
         TIFFClose(T);
     }
@@ -115,6 +157,7 @@ static void tifwrite(const char *path, int w, int h, void *p)
     }
 }
 #endif
+
 /* Load the named TIFF image into a 32-bit floating point OpenGL rectangular  */
 /* texture. Release the image buffer after loading, and return the texture    */
 /* object.                                                                    */
@@ -126,12 +169,19 @@ static GLuint load_texture(const char *path, int *w, int *h)
     GLuint o = 0;
     void  *p = 0;
 
-    if ((p = tifread(path, w, h)))
+    int c;
+    int b;
+
+    if ((p = tifread(path, w, h, &c, &b)))
     {
+        GLenum i = internal_form(b, c);
+        GLenum e = external_form(c);
+        GLenum t = external_type(b);
+
         glGenTextures(1, &o);
         glBindTexture(T,  o);
 
-        glTexImage2D(T, 0, GL_RGBA32F_ARB, *w, *h, 0, GL_RGBA, GL_FLOAT, p);
+        glTexImage2D(T, 0, i, *w, *h, 0, e, t, p);
 
         glTexParameteri(T, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(T, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -501,7 +551,9 @@ static void render_circle_setup(lightprobe *L, int w, int h,
     glLoadIdentity();
 
     glEnable(GL_TEXTURE_RECTANGLE_ARB);
+
     glUseProgram(L->circle_program);
+    glUniform1f(glGetUniformLocation(L->circle_program, "exposure"), e);
 }
 
 static void render_circle_image(struct image *c)

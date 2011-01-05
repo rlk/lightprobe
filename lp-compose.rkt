@@ -21,6 +21,10 @@
   (define lightprobe #f)
   (define lightprobe-path default-path)
 
+  (define (set-lightprobe-path! path)
+    (set! lightprobe-path path)
+    (send root set-label (path->string path)))
+
   ;;----------------------------------------------------------------------------
   ;; Rendering and image processing are performed by the graphics hardware via
   ;; the OpenGL Shading Language. This is managed by the lightprobe library, a
@@ -260,25 +264,34 @@
       (super-new)
       (init-field notify)
 
+      (define width 300)
+
       ; GUI sub-elements
 
+      (define fill (new pane%   [parent this]))
       (define expo (new slider% [parent this]
                                 [label "Exposure"]
-                                [min-value  0]
-                                [max-value  8]
+                                [init-value  100]
+                                [min-value     0]
+                                [max-value width]
+                                [min-width width]
+                                [stretchable-width #f]
                                 [style '(horizontal plain)]
                                 [callback (lambda x (notify))]))
       (define zoom (new slider% [parent this]
                                 [label "Zoom"]
                                 [min-value -5]
                                 [max-value  5]
+                                [min-width width]
+                                [stretchable-width #f]
                                 [style '(horizontal plain)]
                                 [callback (lambda x (notify))]))
 
       ; Public interface
 
       (define/public (get-expo)
-        (exact->inexact (send expo get-value)))
+        (exact->inexact
+         (* 50.0 (/ (send expo get-value) width))))
 
       (define/public (get-zoom)
         (let ((z (expt 2 (send zoom get-value))))
@@ -398,7 +411,10 @@
                            (lp-get-sphere-roll      d) s)))))
 
           (with-output-to-file path
-            (lambda () (map write-image (get-indices))))))
+            (lambda () (map write-image (get-indices)))
+            #:mode 'text #:exists 'replace))
+
+        (send root set-label (path->string path)))
 
       ; Load the named file to the current image state.
 
@@ -421,13 +437,17 @@
               (if (string? line)
                   (begin
                     (parse-image line)
-                    (loop))
-                  (void))))))
+                    (loop in))
+                  (void)))))
+
+        (send root set-label (path->string path)))
 
       ; Unload all currently-loaded images.
 
       (define/public (init-file)
-        #f)
+        (map (lambda (i)
+               (send this del-image i)) (get-indices))
+        (notify))
 
       ; Return a list of path strings of all currently-loaded images.
 
@@ -447,8 +467,8 @@
       ; File / New
 
       (define (do-new control event)
-        (set! lightprobe-path default-path)
-        (init-file))
+        (init-file)
+        (set-lightprobe-path! default-path))
 
       ; File Save
 
@@ -461,8 +481,8 @@
         (let ((path (get-file)))
           (if path
               (begin
-                (set! lightprobe-path path)
                 (init-file)
+                (set-lightprobe-path! path)
                 (load-file lightprobe-path))
               (void))))
 
@@ -472,7 +492,7 @@
         (let ((path (put-file)))
           (if path
               (begin
-                (set! lightprobe-path path)
+                (set-lightprobe-path! path)
                 (save-file lightprobe-path))
               (void))))
 
@@ -613,7 +633,7 @@
 
   (define lp-frame%
     (class drop-frame%
-      (super-new [label "Lightprobe Composer"]
+      (super-new [label (path->string default-path)]
                  [drop-callback (lambda (path) (send images add-image path))])
 
       ; Layout panes
@@ -668,7 +688,11 @@
       (define values
         (new view-values%
              [parent bot]
-             [notify    (lambda () (send canvas reshape))]))))
+             [notify    (lambda () (send canvas reshape))]))
+
+      (define/public (open-file path)
+        (set-lightprobe-path! path)
+        (send images load-file path))))
   
   ;;----------------------------------------------------------------------------
 
@@ -682,6 +706,13 @@
 
   ;; With the OpenGL context active, instantiate the lightprobe.
 
-  (set! lightprobe (lp-init)))
+  (set! lightprobe (lp-init))
+
+  ;; If an input file is given on the command line, open it.
+  
+  (let ((argv (current-command-line-arguments)))
+    (if (vector? argv)
+        (send root open-file (string->path (vector-ref argv 0)))
+        (void))))
 
   ;;----------------------------------------------------------------------------
