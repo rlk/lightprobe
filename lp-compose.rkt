@@ -16,11 +16,12 @@
   
   ;;----------------------------------------------------------------------------
 
-  (define default-path (string->path "Untitled"))
-
+  (define context    #f)
   (define lightprobe #f)
-  (define lightprobe-path default-path)
 
+  (define default-path (string->path "Untitled"))
+  (define lightprobe-path default-path)
+  
   (define (set-lightprobe-path! path)
     (set! lightprobe-path path)
     (send root set-label (path->string path)))
@@ -561,7 +562,7 @@
       (init-field get-grid)
       (init-field get-res)
 
-      (super-new (style '(gl hscroll vscroll)))
+      (super-new [style '(gl hscroll vscroll)])
 
       ; These functions compute the normalized offset of the top-left corner
       ; of the visible portion of the canvas. This varies with the visible set
@@ -576,29 +577,28 @@
                      ((w h) (send this get-virtual-size)))
           (exact->inexact (/ y h))))
 
+      (define/override (on-superwindow-show shown?)
+        (set! context (send this get-gl-context)))
+
       ; The on-paint function redraws the canvas.  This involves marshalling
       ; all of the parameters maintained by other GUI elements and calling the
       ; proper render function for the current view mode.
 
       (define/override (on-paint)
-        (if lightprobe
-          (with-gl-context
-            (lambda ()
-              (let ((x (get-x))
-                    (y (get-y))
-                    (w (send this get-width))
-                    (h (send this get-height))
-                    (e (get-expo))
-                    (z (get-zoom))
-                    (f (bitwise-ior (if (get-grid) lp-render-grid 0)
-                                    (if (get-res)  lp-render-res  0))))
+        (let ((x (get-x))
+              (y (get-y))
+              (w (send this get-width))
+              (h (send this get-height))
+              (e (get-expo))
+              (z (get-zoom))
+              (f (bitwise-ior (if (get-grid) lp-render-grid 0)
+                              (if (get-res)  lp-render-res  0))))
 
-                (case (get-mode)
-                  ((0) (lp-render-circle lightprobe f w h x y e z))
-                  ((1) (lp-render-sphere lightprobe f w h x y e z)))
+          (case (get-mode)
+            ((0) (lp-render-circle lightprobe f w h x y e z))
+            ((1) (lp-render-sphere lightprobe f w h x y e z)))
 
-                (swap-gl-buffers))))
-          (void)))
+          (with-gl-context (lambda () (swap-gl-buffers)))))
 
       ; The reshape function is responsible for handling changes to the shape
       ; of the canvas.  Beyond changes to the shape of the parent window, this
@@ -711,7 +711,8 @@
   ;; If an input file is given on the command line, open it.
   
   (let ((argv (current-command-line-arguments)))
-    (if (vector? argv)
+    (if (and (vector? argv) (positive? (vector-length argv)))
+
         (send root open-file (string->path (vector-ref argv 0)))
         (void))))
 
