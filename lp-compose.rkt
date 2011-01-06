@@ -16,10 +16,9 @@
   
   ;;----------------------------------------------------------------------------
 
-  (define context    #f)
-  (define lightprobe #f)
-
   (define default-path (string->path "Untitled"))
+
+  (define lightprobe #f)
   (define lightprobe-path default-path)
   
   (define (set-lightprobe-path! path)
@@ -40,20 +39,34 @@
     (get-ffi-obj str lp-lib sig))
 
   ;;----------------------------------------------------------------------------
+  ;; Those foreign functions that access the OpenGL context must hold the global
+  ;; lock during execution. The following definition wraps such functions as
+  ;; necessary. The context is defined when it becomes available.
+
+  (define lp-context #f)
+
+  (define (gl-ffi str sig)
+    (let ((fun (lp-ffi str sig)))
+      (lambda arg
+        (if lp-context
+            (send lp-context call-as-current (lambda () (apply fun arg)))
+            #f))))
+
+  ;;----------------------------------------------------------------------------
   ;; Lightprobe instantiation
 
   (define lp-init
-    (lp-ffi "lp_init" (_fun          -> _pointer)))
+    (gl-ffi "lp_init" (_fun          -> _pointer)))
   (define lp-free
-    (lp-ffi "lp_free" (_fun _pointer -> _void)))
+    (gl-ffi "lp_free" (_fun _pointer -> _void)))
 
   ;;----------------------------------------------------------------------------
   ;; Image instantiation
 
   (define lp-add-image
-    (lp-ffi "lp_add_image" (_fun _pointer _path -> _int)))
+    (gl-ffi "lp_add_image" (_fun _pointer _path -> _int)))
   (define lp-del-image
-    (lp-ffi "lp_del_image" (_fun _pointer _int  -> _void)))
+    (gl-ffi "lp_del_image" (_fun _pointer _int  -> _void)))
 
   (define lp-get-image-width
     (lp-ffi "lp_get_image_width"  (_fun _pointer _int -> _int)))
@@ -85,19 +98,19 @@
   (define lp-render-res  2)
 
   (define lp-render-circle
-    (lp-ffi "lp_render_circle" 
+    (gl-ffi "lp_render_circle" 
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
   (define lp-render-sphere
-    (lp-ffi "lp_render_sphere" 
+    (gl-ffi "lp_render_sphere" 
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
 
   ;;----------------------------------------------------------------------------
   ;; Export
 
   (define lp-export-cube
-    (lp-ffi "lp_export_cube"   (_fun _pointer _path -> _bool)))
+    (gl-ffi "lp_export_cube"   (_fun _pointer _path -> _bool)))
   (define lp-export-sphere
-    (lp-ffi "lp_export_sphere" (_fun _pointer _path -> _bool)))
+    (gl-ffi "lp_export_sphere" (_fun _pointer _path -> _bool)))
 
   ;;----------------------------------------------------------------------------
   ;; Image flag accessors
@@ -577,8 +590,13 @@
                      ((w h) (send this get-virtual-size)))
           (exact->inexact (/ y h))))
 
+      ; Some of the low-level functionality accessed via the FFI needs to
+      ; execute within the OpenGL context provided by this canvas.  Cache a
+      ; a global reference to the context at the earliest opportunity.
+
       (define/override (on-superwindow-show shown?)
-        (set! context (send this get-gl-context)))
+        (set! lp-context (send (send this get-dc) get-gl-context))
+        (set! lightprobe (lp-init)))
 
       ; The on-paint function redraws the canvas.  This involves marshalling
       ; all of the parameters maintained by other GUI elements and calling the
@@ -706,7 +724,7 @@
 
   ;; With the OpenGL context active, instantiate the lightprobe.
 
-  (set! lightprobe (lp-init))
+;;  (set! lightprobe (lp-init))
 
   ;; If an input file is given on the command line, open it.
   
