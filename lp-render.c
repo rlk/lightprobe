@@ -386,10 +386,9 @@ lightprobe *lp_init()
     {
         L->circle_program = 0;
         L->sphere_program = 0;
-/*
+
         L->circle_program = load_program(CIRCLE_VERT, CIRCLE_FRAG);
         L->sphere_program = load_program(SPHERE_VERT, SPHERE_FRAG);
-*/
     }
 
     return L;
@@ -559,10 +558,9 @@ static void render_circle_setup(lightprobe *L, int w, int h,
     glLoadIdentity();
 
     glEnable(GL_TEXTURE_RECTANGLE_ARB);
-/*
+
     glUseProgram(L->circle_program);
     glUniform1f(glGetUniformLocation(L->circle_program, "exposure"), e);
-*/
 }
 
 static void render_circle_image(struct image *c)

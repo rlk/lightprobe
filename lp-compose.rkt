@@ -294,8 +294,8 @@
                                 [callback (lambda x (notify))]))
       (define zoom (new slider% [parent this]
                                 [label "Zoom"]
-                                [min-value -5]
-                                [max-value  5]
+                                [min-value -50]
+                                [max-value  50]
                                 [min-width width]
                                 [stretchable-width #f]
                                 [style '(horizontal plain)]
@@ -308,7 +308,7 @@
          (* 50.0 (/ (send expo get-value) width))))
 
       (define/public (get-zoom)
-        (let ((z (expt 2 (send zoom get-value))))
+        (let ((z (expt 2 (/ (send zoom get-value) 10.0))))
           (exact->inexact z)))
       ))
 
@@ -466,8 +466,7 @@
       ; Return a list of path strings of all currently-loaded images.
 
       (define/public (get-visible-descrs)
-        (filter lp-is-image-visible? (get-descrs)))
-))
+        (filter lp-is-image-visible? (get-descrs)))))
 
   ;;----------------------------------------------------------------------------
 
@@ -564,10 +563,16 @@
 
   ;;----------------------------------------------------------------------------
 
+  ;; The lp-canvas handles all lightprobe rendering. As creator of the OpenGL
+  ;; context, it directs the startup and initialization of all lightprobe
+  ;; resources. It receives a number of thunks for use in marshalling rendering
+  ;; parameters, and implements all mouse and scroll bar interaction.
+
   (define lp-canvas%
     (class canvas%
       (inherit refresh with-gl-context swap-gl-buffers)
 
+      (init-field load-file)
       (init-field get-mode)
       (init-field get-images)
       (init-field get-expo)
@@ -575,28 +580,73 @@
       (init-field get-grid)
       (init-field get-res)
 
-      (super-new [style '(gl hscroll vscroll)])
+      (super-new [style '(gl hscroll vscroll no-autoclear)])
 
-      ; These functions compute the normalized offset of the top-left corner
-      ; of the visible portion of the canvas. This varies with the visible set
-      ; of images, the zoom level, and the scrollbar state.
+      (send this init-manual-scrollbars 1000 1000 1000 1000 0 0)
 
       (define (get-x)
-        (let-values (((x y) (send this get-view-start))
-                     ((w h) (send this get-virtual-size)))
-          (exact->inexact (/ x w))))
-      (define (get-y)
-        (let-values (((x y) (send this get-view-start))
-                     ((w h) (send this get-virtual-size)))
-          (exact->inexact (/ y h))))
+        (let ((x (send this get-scroll-pos 'horizontal)))
+          (exact->inexact (/ x 1000.0))))
 
-      ; Some of the low-level functionality accessed via the FFI needs to
-      ; execute within the OpenGL context provided by this canvas.  Cache a
-      ; a global reference to the context at the earliest opportunity.
+      (define (get-y)
+        (let ((y (send this get-scroll-pos 'vertical)))
+          (exact->inexact (/ y 1000.0))))
+
+      ; The reshape function is responsible for handling changes to the shape
+      ; of the canvas.  Beyond changes to the shape of the parent window, this
+      ; may occur in response to additions, deletions, and visibility changes
+      ; among the current set of loaded images.  The primary task is to ensure
+      ; that the scroll bars make sense given the content currently on display.
+      ; With this done, trigger a re-paint.
+
+      (define/public (reshape)
+        (let* ((iz (get-zoom))
+               (ds (get-images))
+               
+               (ws (map (lambda (d) (lp-get-image-width  lightprobe d)) ds))
+               (hs (map (lambda (d) (lp-get-image-height lightprobe d)) ds))
+
+               (iw (if (null? ws) 1 (* iz (apply max ws))))
+               (ih (if (null? hs) 1 (* iz (apply max hs))))
+
+               (ww (send this get-width))
+               (wh (send this get-height))
+
+               (pw (inexact->exact (ceiling (/ (* 1000.0 ww) iw))))
+               (ph (inexact->exact (ceiling (/ (* 1000.0 wh) ih)))))
+
+          (send this show-scrollbars (< pw 1000.0) (< ph 1000.0))
+
+          (if (< pw 1000.0)
+              (send this set-scroll-page 'horizontal pw) (void))
+          (if (< ph 1000.0)
+              (send this set-scroll-page 'vertical   ph) (void))
+
+          (refresh)))
+
+      ; OpenGL use must wait until the canvas has been shown and the context
+      ; created. Do all lightprobe and image state initialization here. Load
+      ; any data file listed on the command line.
 
       (define/override (on-superwindow-show shown?)
-        (set! lp-context (send (send this get-dc) get-gl-context))
-        (set! lightprobe (lp-init)))
+        (if shown?
+            (let ((ctx (send (send this get-dc) get-gl-context))
+                  (arg (current-command-line-arguments)))
+
+              (set! lp-context ctx)
+              (set! lightprobe (lp-init))
+
+              (if (and (vector? arg) (positive? (vector-length arg)))
+
+                  (let ((path (string->path (vector-ref arg 0))))
+                    (set-lightprobe-path! path)
+                    (load-file            path))
+
+                  (void)))
+            (void)))
+
+      (define/override (on-scroll event) (send this refresh))
+      (define/override (on-size   w h)   (send this reshape))
 
       ; The on-paint function redraws the canvas.  This involves marshalling
       ; all of the parameters maintained by other GUI elements and calling the
@@ -616,30 +666,7 @@
             ((0) (lp-render-circle lightprobe f w h x y e z))
             ((1) (lp-render-sphere lightprobe f w h x y e z)))
 
-          (with-gl-context (lambda () (swap-gl-buffers)))))
-
-      ; The reshape function is responsible for handling changes to the shape
-      ; of the canvas.  Beyond changes to the shape of the parent window, this
-      ; may occur in response to additions, deletions, and visibility changes
-      ; among the current set of loaded images.  The primary task is to ensure
-      ; that the scroll bars make sense given the content currently on display.
-      ; With this done, trigger a re-paint.
-
-      (define/public (reshape)
-        (let* ((ds (get-images))
-
-               (ws (map (lambda (d) (lp-get-image-width  lightprobe d)) ds))
-               (hs (map (lambda (d) (lp-get-image-height lightprobe d)) ds))
-
-               (zoom (lambda (z) (inexact->exact (ceiling (* z (get-zoom))))))
-
-               (w (if (empty? ws) 1 (zoom (apply max ws))))
-               (h (if (empty? hs) 1 (zoom (apply max hs))))
-               (x (get-x))
-               (y (get-y)))
-
-          (send this init-auto-scrollbars w h x y)
-          (refresh)))))
+          (with-gl-context (lambda () (swap-gl-buffers)))))))
 
   ;;----------------------------------------------------------------------------
 
@@ -681,6 +708,7 @@
              [parent mid]
              [min-width  640]
              [min-height 480]
+             [load-file  (lambda (path) (send images load-file path))]
              [get-images (lambda () (send images  get-visible-descrs))]
              [get-mode   (lambda () (send mode    get-mode))]
              [get-expo   (lambda () (send values  get-expo))]
@@ -706,11 +734,7 @@
       (define values
         (new view-values%
              [parent bot]
-             [notify    (lambda () (send canvas reshape))]))
-
-      (define/public (open-file path)
-        (set-lightprobe-path! path)
-        (send images load-file path))))
+             [notify    (lambda () (send canvas reshape))]))))
   
   ;;----------------------------------------------------------------------------
 
@@ -718,20 +742,8 @@
 
   (define root (new lp-frame%))
   
-  ;; Show the application window, activating the OpenGL context.
+  ;; Show the application window.
 
-  (send root show #t)
-
-  ;; With the OpenGL context active, instantiate the lightprobe.
-
-;;  (set! lightprobe (lp-init))
-
-  ;; If an input file is given on the command line, open it.
-  
-  (let ((argv (current-command-line-arguments)))
-    (if (and (vector? argv) (positive? (vector-length argv)))
-
-        (send root open-file (string->path (vector-ref argv 0)))
-        (void))))
+  (send root show #t))
 
   ;;----------------------------------------------------------------------------
