@@ -542,8 +542,7 @@ float lp_get_image_value(lightprobe *L, int i, int k)
 
 /*----------------------------------------------------------------------------*/
 
-static void render_circle_setup(lightprobe *L, int w, int h,
-                                float x, float y, float e, float z)
+static void render_circle_setup(lightprobe *L, int w, int h, float e, float z)
 {
     glClearColor(0.0, 0.0, 0.0, 0.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -552,7 +551,7 @@ static void render_circle_setup(lightprobe *L, int w, int h,
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, w, 0, h, 0, 1);
+    glOrtho(0, w, h, 0, 0, 1);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -561,20 +560,28 @@ static void render_circle_setup(lightprobe *L, int w, int h,
 
     glUseProgram(L->circle_program);
     glUniform1f(glGetUniformLocation(L->circle_program, "exposure"), e);
+    glUniform1f(glGetUniformLocation(L->circle_program, "zoom"),     z);
 }
 
-static void render_circle_image(struct image *c)
+static void render_circle_image(lightprobe *L, struct image *c, float x, float y, float z)
 {
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
+    glUniform2f(glGetUniformLocation(L->circle_program, "size"), c->w, c->h);
 
-    glBegin(GL_QUADS);
+    glPushMatrix();
     {
-        glVertex2i(0,    0);
-        glVertex2i(c->w, 0);
-        glVertex2i(c->w, c->h);
-        glVertex2i(0,    c->h);
+        glScaled(z, z, 1.0);
+        glTranslated(-x * c->w, -y * c->h, 0.0);
+        glBegin(GL_QUADS);
+        {
+            glVertex2i(0,    0);
+            glVertex2i(c->w, 0);
+            glVertex2i(c->w, c->h);
+            glVertex2i(0,    c->h);
+        }
+        glEnd();
     }
-    glEnd();
+    glPopMatrix();
 }
 
 void lp_render_circle(lightprobe *L, int f, int w, int h,
@@ -586,11 +593,11 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
     printf("render_circle %d %d %d %f %f %f %f\n", f, w, h, x, y, e, z);
 
-    render_circle_setup(L, w, h, x, y, e, z);
+    render_circle_setup(L, w, h, e, z);
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
         if ((L->images[i].flags & LP_FLAG_HIDDEN) == 0)
-            render_circle_image(L->images + i);
+            render_circle_image(L, L->images + i, x, y, z);
 }
 
 /*----------------------------------------------------------------------------*/

@@ -294,7 +294,8 @@
                                 [callback (lambda x (notify))]))
       (define zoom (new slider% [parent this]
                                 [label "Zoom"]
-                                [min-value -50]
+                                [init-value  0]
+                                [min-value -20]
                                 [max-value  50]
                                 [min-width width]
                                 [stretchable-width #f]
