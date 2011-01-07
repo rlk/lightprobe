@@ -394,6 +394,15 @@ lightprobe *lp_init()
     return L;
 }
 
+void lp_tilt(lightprobe *L)
+{
+    free_program(L->circle_program);
+    free_program(L->sphere_program);
+
+    L->circle_program = load_program(CIRCLE_VERT, CIRCLE_FRAG);
+    L->sphere_program = load_program(SPHERE_VERT, SPHERE_FRAG);
+}
+
 /* Release a lightprobe object and all state associated with it.  Unload any  */
 /* images and delete all OpenGL state.                                        */
 
@@ -453,6 +462,12 @@ int lp_add_image(lightprobe *L, const char *path)
                 L->images[i].w       = w;
                 L->images[i].h       = h;
                 L->images[i].flags   = LP_FLAG_LOADED;
+
+                /* Set some default values. */
+
+                L->images[i].values[LP_CIRCLE_X]      = w / 2;
+                L->images[i].values[LP_CIRCLE_Y]      = h / 2;
+                L->images[i].values[LP_CIRCLE_RADIUS] = h / 3;
 
                 /* Succeed. */
 
@@ -545,37 +560,47 @@ float lp_get_image_value(lightprobe *L, int i, int k)
 static void render_circle_setup(lightprobe *L, int w, int h, float e, float z)
 {
     glClearColor(0.0, 0.0, 0.0, 0.0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT |
+            GL_DEPTH_BUFFER_BIT);
 
     glViewport(0, 0, w, h);
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, w, h, 0, 0, 1);
-
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    glEnable(GL_TEXTURE_RECTANGLE_ARB);
-
     glUseProgram(L->circle_program);
-    glUniform1f(glGetUniformLocation(L->circle_program, "exposure"), e);
+
+    glUniform1f(glGetUniformLocation(L->circle_program, "image"),    0);
     glUniform1f(glGetUniformLocation(L->circle_program, "zoom"),     z);
+    glUniform1f(glGetUniformLocation(L->circle_program, "exposure"), e);
+
+    glEnable(GL_TEXTURE_RECTANGLE_ARB);
 }
 
-static void render_circle_image(lightprobe *L, struct image *c,
-                                int w, int h, float x, float y, float z)
+static void render_circle_image(lightprobe *L, int i, int w, int h,
+                                float x, float y, float z)
 {
+    struct image *c = L->images + i;
+
     int X = -(c->w * z - w) * x;
     int Y = -(c->h * z - h) * y;
 
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
-    glUniform2f(glGetUniformLocation(L->circle_program, "size"), c->w, c->h);
+
+    glUniform2f(glGetUniformLocation(L->circle_program, "circle_p"),
+                c->values[LP_CIRCLE_X],
+                c->values[LP_CIRCLE_Y]);
+    glUniform1f(glGetUniformLocation(L->circle_program, "circle_r"),
+                c->values[LP_CIRCLE_RADIUS]);
 
     glPushMatrix();
     {
         glTranslated(X, Y, 0.0);
-        glScaled(z, z, 1.0);
+        glScaled    (z, z, 1.0);
+
         glBegin(GL_QUADS);
         {
             glVertex2i(0,    0);
@@ -594,15 +619,13 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
     int i;
 
     assert(L);
-/*
-    printf("render_circle %d %d %d %f %f %f %f\n", f, w, h, x, y, e, z);
-*/
+
     render_circle_setup(L, w, h, e, z);
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
         if ((L->images[i].flags & LP_FLAG_LOADED) != 0 &&
             (L->images[i].flags & LP_FLAG_HIDDEN) == 0)
-            render_circle_image(L, L->images + i, w, h, x, y, z);
+            render_circle_image(L, i, w, h, x, y, z);
 }
 
 /*----------------------------------------------------------------------------*/

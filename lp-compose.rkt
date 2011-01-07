@@ -57,6 +57,8 @@
 
   (define lp-init
     (gl-ffi "lp_init" (_fun          -> _pointer)))
+  (define lp-tilt
+    (gl-ffi "lp_tilt" (_fun _pointer -> _void)))
   (define lp-free
     (gl-ffi "lp_free" (_fun _pointer -> _void)))
 
@@ -393,7 +395,7 @@
                                           [label #f]
                                           [choices '()]
                                           [callback set]
-                                          [style '(extended)]))
+                                          [style '(multiple)]))
 
       (define add  (instantiate packed-button% ("Add"    buttons do-add)))
       (define rem  (instantiate packed-button% ("Remove" buttons do-del)))
@@ -475,8 +477,16 @@
                (send this del-image i)) (get-indices))
         (notify))
 
-      ; Return a list of path strings of all currently-loaded images.
+      ; Tilt
 
+      (define/public (tilt-file)
+        (lp-tilt lightprobe)
+        (notify))
+
+      ; Return a list of image path strings.
+
+      (define/public (get-active-descrs)
+        (filter lp-is-image-active?  (get-descrs)))
       (define/public (get-visible-descrs)
         (filter lp-is-image-visible? (get-descrs)))))
 
@@ -488,6 +498,7 @@
       (init-field save-file)
       (init-field load-file)
       (init-field init-file)
+      (init-field tilt-file)
 
       ; File / New
 
@@ -533,6 +544,11 @@
         (let ((path (put-file)))
           (if path (lp-export-sphere lightprobe path) #f)))
 
+      ; File / Tilt
+
+      (define (do-tilt control event)
+        (tilt-file))
+
       ; Menus and menu items.
 
       (define (get-shifted-shortcut-prefix)
@@ -571,7 +587,14 @@
                         [label "Export Sphere Map..."]
                         [callback do-export-sphere]
                         [shortcut #\e]
-                        [shortcut-prefix (get-shifted-shortcut-prefix)]))))
+                        [shortcut-prefix (get-shifted-shortcut-prefix)])
+
+        (new separator-menu-item% [parent file])
+
+        (new menu-item% [parent file]
+                        [label "Tilt"]
+                        [callback do-tilt]
+                        [shortcut #\t]))))
 
   ;;----------------------------------------------------------------------------
 
@@ -589,7 +612,8 @@
       (init-field get-zoom)
       (init-field get-expo)
       (init-field get-mode)
-      (init-field get-images)
+      (init-field get-visible)
+      (init-field get-active)
       (init-field get-grid)
       (init-field get-res)
 
@@ -619,14 +643,14 @@
 
       (define (get-contents-w)
         (let* ((ws (map (lambda (d)
-                          (lp-get-image-width lightprobe d)) (get-images))))
+                          (lp-get-image-width lightprobe d)) (get-visible))))
           (if (null? ws)
               1
               (round->exact (* (get-zoom) (apply max ws))))))
 
       (define (get-contents-h)
         (let* ((hs (map (lambda (d)
-                          (lp-get-image-height lightprobe d)) (get-images))))
+                          (lp-get-image-height lightprobe d)) (get-visible))))
           (if (null? hs)
               1
               (round->exact (* (get-zoom) (apply max hs))))))
@@ -688,34 +712,54 @@
       (define click-z        0)
       (define click-scroll-x 0)
       (define click-scroll-y 0)
+      (define last-x         0)
+      (define last-y         0)
 
       (define/override (on-event event)
-        (let ((shift? (send event get-shift-down))
-              (cx     (send event get-x))
-              (cy     (send event get-y))
-              (cz     (get-zoom))
-              (sx     (send this get-scroll-pos 'horizontal))
-              (sy     (send this get-scroll-pos 'vertical)))
+        (let* ((type   (send event get-event-type))
+               (shift? (send event get-shift-down))
+               (cx     (send event get-x))
+               (cy     (send event get-y))
+               (cz     (get-zoom))
+               (sx     (send this get-scroll-pos 'horizontal))
+               (sy     (send this get-scroll-pos 'vertical))
+               (dx     (/ (- cx last-x) cz))
+               (dy     (/ (- cy last-y) cz)))
 
-          (case (send event get-event-type)
+          (case type
 
-            ((right-down)
+            ((right-down left-down)
              (set! click-x        cx)
              (set! click-y        cy)
+             (set! last-x         cx)
+             (set! last-y         cy)
              (set! click-z        cz)
              (set! click-scroll-x sx)
              (set! click-scroll-y sy)
-             (set! click-op (if shift? 'zoom 'pan)))
+             (set! click-op (case type
+                              (( left-down) (if shift? 'size 'move))
+                              ((right-down) (if shift? 'zoom 'pan)))))
 
             ((motion)
              (case click-op
 
-               ;; Right-click shift-drag = zoom
+               ;; Left-click drag = move
 
-               ((zoom)
-                (set-zoom (max 0.1 (+ click-z (/ (- click-y cy) 50))))
-                (reshape))
+               ((move)
+                (map (lambda (d)
+                       (lp-set-circle-x d (+ (lp-get-circle-x d) dx))
+                       (lp-set-circle-y d (+ (lp-get-circle-y d) dy)))
+                     (get-active))
+                (refresh))
 
+               ;; Left-click shift-drag = size
+
+               ((size)
+                (map (lambda (d)
+                       (lp-set-circle-radius d (- (lp-get-circle-radius d) dy)))
+                     (get-active))
+                  (refresh))
+            
                ;; Right-click drag = pan
 
                ((pan)
@@ -726,9 +770,18 @@
                   (recenter)
                   (reshape)))
 
+               ;; Right-click shift-drag = zoom
+
+               ((zoom)
+                (set-zoom (max 0.1 (+ click-z (/ (- click-y cy) 50))))
+                (reshape))
+
                (else (void))))
 
-            (else (set! click-op #f)))))
+            (else (set! click-op #f)))
+
+          (set! last-x cx)
+          (set! last-y cy)))
 
       ; Scroll events and canvas resizes must recache the image center and
       ; update the display.
@@ -809,7 +862,8 @@
              [parent this]
              [save-file  (lambda (path) (send images save-file path))]
              [load-file  (lambda (path) (send images load-file path))]
-             [init-file  (lambda ()     (send images init-file))]))
+             [init-file  (lambda ()     (send images init-file))]
+             [tilt-file  (lambda ()     (send images tilt-file))]))
 
       (define canvas
         (new lp-canvas%
@@ -823,7 +877,8 @@
              [get-grid   (lambda ()     (send options get-grid))]
              [get-mode   (lambda ()     (send mode    get-mode))]
              [get-res    (lambda ()     (send options get-res))]
-             [get-images (lambda ()     (send images  get-visible-descrs))]))
+             [get-visible (lambda ()    (send images  get-visible-descrs))]
+             [get-active  (lambda ()    (send images  get-active-descrs))]))
 
       (define images
         (new image-list%

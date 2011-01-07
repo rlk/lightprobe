@@ -20,6 +20,7 @@ typedef struct lightprobe lightprobe;
 /*----------------------------------------------------------------------------*/
 
 lightprobe *lp_init();
+void        lp_tilt(lightprobe *lp);
 void        lp_free(lightprobe *lp);
 
 /*----------------------------------------------------------------------------*/
