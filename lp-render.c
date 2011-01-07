@@ -100,6 +100,8 @@ static void *tifread(const char *path, int *w, int *h, int *c, int *b)
 {
     TIFF *T = 0;
     void *p = 0;
+
+    TIFFSetWarningHandler(0);
     
     if ((T = TIFFOpen(path, "r")))
     {
@@ -134,6 +136,8 @@ static void tifwrite(const char *path, int w, int h, void *p)
 {
     TIFF *T = 0;
     
+    TIFFSetWarningHandler(0);
+
     if ((T = TIFFOpen(path, "w")))
     {
         uint32 i, s;
@@ -377,10 +381,6 @@ lightprobe *lp_init()
     /* to call it multiple times.                                             */
 
     glewInit();
-    printf("Vendor:   %s\n", glGetString(GL_VENDOR));
-    printf("Renderer: %s\n", glGetString(GL_RENDERER));
-    printf("Version:  %s\n", glGetString(GL_VERSION));
-    printf("Shader:   %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
 
     if ((L = (lightprobe *) calloc (1, sizeof (lightprobe))))
     {
@@ -563,15 +563,19 @@ static void render_circle_setup(lightprobe *L, int w, int h, float e, float z)
     glUniform1f(glGetUniformLocation(L->circle_program, "zoom"),     z);
 }
 
-static void render_circle_image(lightprobe *L, struct image *c, float x, float y, float z)
+static void render_circle_image(lightprobe *L, struct image *c,
+                                int w, int h, float x, float y, float z)
 {
+    int X = -(c->w * z - w) * x;
+    int Y = -(c->h * z - h) * y;
+
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
     glUniform2f(glGetUniformLocation(L->circle_program, "size"), c->w, c->h);
 
     glPushMatrix();
     {
+        glTranslated(X, Y, 0.0);
         glScaled(z, z, 1.0);
-        glTranslated(-x * c->w, -y * c->h, 0.0);
         glBegin(GL_QUADS);
         {
             glVertex2i(0,    0);
@@ -590,14 +594,15 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
     int i;
 
     assert(L);
-
+/*
     printf("render_circle %d %d %d %f %f %f %f\n", f, w, h, x, y, e, z);
-
+*/
     render_circle_setup(L, w, h, e, z);
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
-        if ((L->images[i].flags & LP_FLAG_HIDDEN) == 0)
-            render_circle_image(L, L->images + i, x, y, z);
+        if ((L->images[i].flags & LP_FLAG_LOADED) != 0 &&
+            (L->images[i].flags & LP_FLAG_HIDDEN) == 0)
+            render_circle_image(L, L->images + i, w, h, x, y, z);
 }
 
 /*----------------------------------------------------------------------------*/

@@ -145,6 +145,10 @@
   (define (lp-get-sphere-roll      d)   (lp-get-value d 5))
 
   ;;----------------------------------------------------------------------------
+
+  (define (round->exact x) (inexact->exact (round x)))
+
+  ;;----------------------------------------------------------------------------
   ;; The Apple HIG defines a preferences panel with all radio and check boxes
   ;; vertically aligned, with a top-right-justified label to the left of each
   ;; group. The preferences-group is a custom layout pane to produce this.
@@ -278,7 +282,9 @@
       (super-new)
       (init-field notify)
 
-      (define width 300)
+      (define width    300)
+      (define min-zoom -20)
+      (define max-zoom  50)
 
       ; GUI sub-elements
 
@@ -295,23 +301,28 @@
       (define zoom (new slider% [parent this]
                                 [label "Zoom"]
                                 [init-value  0]
-                                [min-value -20]
-                                [max-value  50]
+                                [min-value min-zoom]
+                                [max-value max-zoom]
                                 [min-width width]
                                 [stretchable-width #f]
                                 [style '(horizontal plain)]
                                 [callback (lambda x (notify))]))
 
+      (define (value->expo v) (* 50.0 (/ v width)))
+      (define (value->zoom v) (exp (/ v 10.0)))
+      (define (zoom->value z) (* (log z) 10.0))
+
       ; Public interface
 
       (define/public (get-expo)
-        (exact->inexact
-         (* 50.0 (/ (send expo get-value) width))))
+        (exact->inexact (value->expo (send expo get-value))))
 
       (define/public (get-zoom)
-        (let ((z (expt 2 (/ (send zoom get-value) 10.0))))
-          (exact->inexact z)))
-      ))
+        (exact->inexact (value->zoom (send zoom get-value))))
+
+      (define/public (set-zoom z)
+        (let ((v (round->exact (zoom->value z))))
+          (send zoom set-value (max (min v max-zoom) min-zoom))))))
 
   ;;----------------------------------------------------------------------------
   ;; The image-list manages the set of lightprobe images input to the composer.
@@ -574,10 +585,11 @@
       (inherit refresh with-gl-context swap-gl-buffers)
 
       (init-field load-file)
+      (init-field set-zoom)
+      (init-field get-zoom)
+      (init-field get-expo)
       (init-field get-mode)
       (init-field get-images)
-      (init-field get-expo)
-      (init-field get-zoom)
       (init-field get-grid)
       (init-field get-res)
 
@@ -585,69 +597,144 @@
 
       (send this init-manual-scrollbars 1000 1000 1000 1000 0 0)
 
+      ;; Compute the normalized scroll position: position / range.
+
       (define (get-x)
-        (let ((x (send this get-scroll-pos 'horizontal)))
-          (exact->inexact (/ x 1000.0))))
+        (let ((x (send this get-scroll-pos   'horizontal))
+              (w (send this get-scroll-range 'horizontal)))
+          (if (positive? w)
+              (exact->inexact (/ x w))
+              0.0)))
 
       (define (get-y)
-        (let ((y (send this get-scroll-pos 'vertical)))
-          (exact->inexact (/ y 1000.0))))
+        (let ((y (send this get-scroll-pos   'vertical))
+              (h (send this get-scroll-range 'vertical)))
+          (if (positive? h)
+              (exact->inexact (/ y h))
+              0.0)))
+
+      ;; The virtual size of the canvas contents is defined to be the size
+      ;; of the largest currently-visible image times the zoom factor, or
+      ;; one if there are no visible images.
+
+      (define (get-contents-w)
+        (let* ((ws (map (lambda (d)
+                          (lp-get-image-width lightprobe d)) (get-images))))
+          (if (null? ws)
+              1
+              (round->exact (* (get-zoom) (apply max ws))))))
+
+      (define (get-contents-h)
+        (let* ((hs (map (lambda (d)
+                          (lp-get-image-height lightprobe d)) (get-images))))
+          (if (null? hs)
+              1
+              (round->exact (* (get-zoom) (apply max hs))))))
+
+      ;; The center of the image should not move during zooming.  Thus, the
+      ;; pan must be adjusted as image and zoom parameters change.  To make
+      ;; this possible, we track the current image center in normalized image
+      ;; coordinates, updating it with each reshape and scroll.
+
+      (define center-x 0.5)
+      (define center-y 0.5)
+
+      (define (recenter)
+        (let* ((iw (get-contents-w))
+               (ih (get-contents-h))
+               (hw (/ (send this get-width)  2))
+               (hh (/ (send this get-height) 2))
+               (sx (send this get-scroll-pos 'horizontal))
+               (sy (send this get-scroll-pos 'vertical)))
+
+          (set! center-x (/ (+ sx hw) iw))
+          (set! center-y (/ (+ sy hh) ih))))
 
       ; The reshape function is responsible for handling changes to the shape
       ; of the canvas.  Beyond changes to the shape of the parent window, this
       ; may occur in response to additions, deletions, and visibility changes
       ; among the current set of loaded images.  The primary task is to ensure
       ; that the scroll bars make sense given the content currently on display.
-      ; With this done, trigger a re-paint.
+      ; With this done, cache the image center and trigger a re-paint.
 
       (define/public (reshape)
-        (let* ((iz (get-zoom))
-               (ds (get-images))
-               
-               (ws (map (lambda (d) (lp-get-image-width  lightprobe d)) ds))
-               (hs (map (lambda (d) (lp-get-image-height lightprobe d)) ds))
-
-               (iw (if (null? ws) 1 (* iz (apply max ws))))
-               (ih (if (null? hs) 1 (* iz (apply max hs))))
+        (let* ((iw (get-contents-w))
+               (ih (get-contents-h))
 
                (ww (send this get-width))
                (wh (send this get-height))
 
-               (pw (inexact->exact (ceiling (/ (* 1000.0 ww) iw))))
-               (ph (inexact->exact (ceiling (/ (* 1000.0 wh) ih)))))
+               (nw (max 0 (- iw ww)))
+               (nh (max 0 (- ih wh)))
+               (nx (round->exact (max 0 (- (* center-x iw) (/ ww 2)))))
+               (ny (round->exact (max 0 (- (* center-y ih) (/ wh 2))))))
 
-          (send this show-scrollbars (< pw 1000.0) (< ph 1000.0))
+          (send this set-scroll-page  'horizontal ww)
+          (send this set-scroll-range 'horizontal nw)
+          (send this set-scroll-pos   'horizontal nx)
+          (send this set-scroll-page  'vertical   wh)
+          (send this set-scroll-range 'vertical   nh)
+          (send this set-scroll-pos   'vertical   ny)
 
-          (if (< pw 1000.0)
-              (send this set-scroll-page 'horizontal pw) (void))
-          (if (< ph 1000.0)
-              (send this set-scroll-page 'vertical   ph) (void))
-
+          (recenter)
           (refresh)))
 
-      ; OpenGL use must wait until the canvas has been shown and the context
-      ; created. Do all lightprobe and image state initialization here. Load
-      ; any data file listed on the command line.
+      ; Left mouse button events configure the current image, while right mouse
+      ; events act as shortcuts to panning and zooming. 
 
-      (define/override (on-superwindow-show shown?)
-        (if shown?
-            (let ((ctx (send (send this get-dc) get-gl-context))
-                  (arg (current-command-line-arguments)))
+      (define click-op      #f)
+      (define click-x        0)
+      (define click-y        0)
+      (define click-z        0)
+      (define click-scroll-x 0)
+      (define click-scroll-y 0)
 
-              (set! lp-context ctx)
-              (set! lightprobe (lp-init))
+      (define/override (on-event event)
+        (let ((shift? (send event get-shift-down))
+              (cx     (send event get-x))
+              (cy     (send event get-y))
+              (cz     (get-zoom))
+              (sx     (send this get-scroll-pos 'horizontal))
+              (sy     (send this get-scroll-pos 'vertical)))
 
-              (if (and (vector? arg) (positive? (vector-length arg)))
+          (case (send event get-event-type)
 
-                  (let ((path (string->path (vector-ref arg 0))))
-                    (set-lightprobe-path! path)
-                    (load-file            path))
+            ((right-down)
+             (set! click-x        cx)
+             (set! click-y        cy)
+             (set! click-z        cz)
+             (set! click-scroll-x sx)
+             (set! click-scroll-y sy)
+             (set! click-op (if shift? 'zoom 'pan)))
 
-                  (void)))
-            (void)))
+            ((motion)
+             (case click-op
 
-      (define/override (on-scroll event) (send this refresh))
-      (define/override (on-size   w h)   (send this reshape))
+               ;; Right-click shift-drag = zoom
+
+               ((zoom)
+                (set-zoom (max 0.1 (+ click-z (/ (- click-y cy) 50))))
+                (reshape))
+
+               ;; Right-click drag = pan
+
+               ((pan)
+                (let ((nx (max 0 (+ click-scroll-x (- click-x cx))))
+                      (ny (max 0 (+ click-scroll-y (- click-y cy)))))
+                  (send this set-scroll-pos 'horizontal nx)
+                  (send this set-scroll-pos 'vertical   ny)
+                  (recenter)
+                  (reshape)))
+
+               (else (void))))
+
+            (else (set! click-op #f)))))
+
+      ; Scroll events and canvas resizes must recache the image center and
+      ; update the display.
+      
+      (define/override (on-scroll event) (recenter) (send this refresh))
+      (define/override (on-size   w h)   (recenter) (send this reshape))
 
       ; The on-paint function redraws the canvas.  This involves marshalling
       ; all of the parameters maintained by other GUI elements and calling the
@@ -667,14 +754,34 @@
             ((0) (lp-render-circle lightprobe f w h x y e z))
             ((1) (lp-render-sphere lightprobe f w h x y e z)))
 
-          (with-gl-context (lambda () (swap-gl-buffers)))))))
+          (with-gl-context (lambda () (swap-gl-buffers)))))
+
+      ; OpenGL use must wait until the canvas has been shown and the context
+      ; created. Do all lightprobe and image state initialization here. Load
+      ; any data file listed on the command line.
+
+      (define/override (on-superwindow-show shown?)
+        (if shown?
+            (let ((ctx (send (send this get-dc) get-gl-context))
+                  (arg (current-command-line-arguments)))
+
+              (set! lp-context ctx)
+              (set! lightprobe (lp-init))
+
+              (if (and (vector? arg) (positive? (vector-length arg)))
+
+                  (let ((path (string->path (vector-ref arg 0))))
+                    (load-file            path)
+                    (set-lightprobe-path! path))
+
+                  (void))) (void)))))
 
   ;;----------------------------------------------------------------------------
 
   ;; The lp-frame is the toplevel window of the application, and the overall
   ;; organizing structure through which all state changes flow. All GUI sub-
   ;; groups are instantiated as members and a variety of anonymous functions
-  ;; are closed within this scope, providing cross-cutting access between
+  ;; are closed within this scope to provide cross-cutting access between
   ;; sub-elements of the application.
 
   (define lp-frame%
@@ -700,9 +807,9 @@
       (define menus
         (new lp-menu-bar%
              [parent this]
-             [save-file (lambda (path) (send images save-file path))]
-             [load-file (lambda (path) (send images load-file path))]
-             [init-file (lambda ()     (send images init-file))]))
+             [save-file  (lambda (path) (send images save-file path))]
+             [load-file  (lambda (path) (send images load-file path))]
+             [init-file  (lambda ()     (send images init-file))]))
 
       (define canvas
         (new lp-canvas%
@@ -710,32 +817,33 @@
              [min-width  640]
              [min-height 480]
              [load-file  (lambda (path) (send images load-file path))]
-             [get-images (lambda () (send images  get-visible-descrs))]
-             [get-mode   (lambda () (send mode    get-mode))]
-             [get-expo   (lambda () (send values  get-expo))]
-             [get-zoom   (lambda () (send values  get-zoom))]
-             [get-grid   (lambda () (send options get-grid))]
-             [get-res    (lambda () (send options get-res))]))
+             [set-zoom   (lambda (z)    (send values  set-zoom z))]
+             [get-zoom   (lambda ()     (send values  get-zoom))]
+             [get-expo   (lambda ()     (send values  get-expo))]
+             [get-grid   (lambda ()     (send options get-grid))]
+             [get-mode   (lambda ()     (send mode    get-mode))]
+             [get-res    (lambda ()     (send options get-res))]
+             [get-images (lambda ()     (send images  get-visible-descrs))]))
 
       (define images
         (new image-list%
              [parent img]
-             [notify    (lambda () (send canvas reshape))]))
+             [notify (lambda () (send canvas reshape))]))
 
       (define mode
         (new view-mode%
              [parent opt]
-             [notify    (lambda () (send canvas reshape))]))
+             [notify (lambda () (send canvas reshape))]))
 
       (define options
         (new view-options%
              [parent opt]
-             [notify    (lambda () (send canvas reshape))]))
+             [notify (lambda () (send canvas reshape))]))
 
       (define values
         (new view-values%
              [parent bot]
-             [notify    (lambda () (send canvas reshape))]))))
+             [notify (lambda () (send canvas reshape))]))))
   
   ;;----------------------------------------------------------------------------
 
