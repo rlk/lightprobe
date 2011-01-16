@@ -76,6 +76,7 @@ void lp_render_sphere(lightprobe *lp, int f, int w, int h,
 /*----------------------------------------------------------------------------*/
 
 int lp_export_cube  (lightprobe *lp, const char *path);
+int lp_export_dome  (lightprobe *lp, const char *path);
 int lp_export_sphere(lightprobe *lp, const char *path);
 
 /*----------------------------------------------------------------------------*/

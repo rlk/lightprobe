@@ -429,6 +429,12 @@ int lp_export_cube(lightprobe *L, const char *path)
     return 1;
 }
 
+int lp_export_dome(lightprobe *L, const char *path)
+{
+    printf("Export Dome Map %s\n", path);
+    return 1;
+}
+
 int lp_export_sphere(lightprobe *L, const char *path)
 {
     printf("Export Sphere Map %s\n", path);

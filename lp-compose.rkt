@@ -18,8 +18,12 @@
 
   (define default-path (string->path "Untitled"))
 
+  ; These are our globals: the lightprobe structure and current path name.
+
   (define lightprobe #f)
   (define lightprobe-path default-path)
+
+  ; When storing the lightprobe path name, set the frame title as well.
   
   (define (set-lightprobe-path! path)
     (set! lightprobe-path path)
@@ -41,7 +45,7 @@
   ;;----------------------------------------------------------------------------
   ;; Those foreign functions that access the OpenGL context must hold the global
   ;; lock during execution. The following definition wraps such functions as
-  ;; necessary. The context is defined when it becomes available.
+  ;; necessary. The context is set by the canvas when it becomes available.
 
   (define lp-context #f)
 
@@ -111,6 +115,8 @@
 
   (define lp-export-cube
     (gl-ffi "lp_export_cube"   (_fun _pointer _path -> _bool)))
+  (define lp-export-dome
+    (gl-ffi "lp_export_dome"   (_fun _pointer _path -> _bool)))
   (define lp-export-sphere
     (gl-ffi "lp_export_sphere" (_fun _pointer _path -> _bool)))
 
@@ -410,7 +416,7 @@
           (if (lp-is-image-loaded? d)
               (begin (send images append (path->string path) d)
                      (notify)
-                     #t)
+                     d)
               #f)))
 
       ; Remove (unload) the named image.
@@ -449,16 +455,25 @@
       (define/public (load-file path)
         (let ((parse-image (lambda (line)
                              (let* ((in (open-input-string line))
-                                    (f  (read in))
+                                    (fl (read in))
                                     (cx (read in))
                                     (cy (read in))
                                     (cr (read in))
                                     (se (read in))
                                     (sa (read in))
                                     (sr (read in))
-                                    (nm (read in)))
-        
-                              (add-image (string->path nm))))))
+                                    (nm (read in))
+                                    (d (add-image (string->path nm))))
+
+                               (if d (begin
+                                       (lp-set-image-flags lightprobe d fl)
+                                       (lp-set-circle-x         d cx)
+                                       (lp-set-circle-y         d cy)
+                                       (lp-set-circle-radius    d cr)
+                                       (lp-set-sphere-elevation d se)
+                                       (lp-set-sphere-azimuth   d se)
+                                       (lp-set-sphere-roll      d se))
+                                   (void))))))
 
           (let loop ((in (open-input-file path)))
             (let ((line (read-line in)))
@@ -467,15 +482,16 @@
                     (parse-image line)
                     (loop in))
                   (void)))))
-
+        
         (send root set-label (path->string path)))
 
       ; Unload all currently-loaded images.
 
       (define/public (init-file)
-        (map (lambda (i)
-               (send this del-image i)) (get-indices))
-        (notify))
+        (if (positive? (send images get-number))
+            (begin (send this del-image 0)
+                   (init-file))
+            (notify)))
 
       ; Tilt
 
@@ -499,62 +515,75 @@
       (init-field load-file)
       (init-field init-file)
       (init-field tilt-file)
-
-      ; File / New
-
-      (define (do-new control event)
-        (init-file)
-        (set-lightprobe-path! default-path))
-
-      ; File Save
-
-      (define (do-save control event)
-        (save-file lightprobe-path))
-
-      ; File / Open
-
-      (define (do-open control event)
-        (let ((path (get-file)))
-          (if path
-              (begin
-                (init-file)
-                (set-lightprobe-path! path)
-                (load-file lightprobe-path))
-              (void))))
-
-      ; File / Save As...
-
-      (define (do-save-as control event)
-        (let ((path (put-file)))
-          (if path
-              (begin
-                (set-lightprobe-path! path)
-                (save-file lightprobe-path))
-              (void))))
-
-      ; File / Export Cube...
-
-      (define (do-export-cube control event)
-        (let ((path (put-file)))
-          (if path (lp-export-cube   lightprobe path) #f)))
-
-      ; File / Export Sphere...
-
-      (define (do-export-sphere control event)
-        (let ((path (put-file)))
-          (if path (lp-export-sphere lightprobe path) #f)))
-
-      ; File / Tilt
-
-      (define (do-tilt control event)
-        (tilt-file))
-
-      ; Menus and menu items.
+      (init-field set-mode)
 
       (define (get-shifted-shortcut-prefix)
         (cons 'shift (get-default-shortcut-prefix)))
 
+      ;; -----------------------------------------------------------------------
+      ;; File Menu
+
       (let ((file (new menu% [parent this] [label "File"])))
+
+        ;; File / New
+        
+        (define (do-new control event)
+          (init-file)
+          (set-lightprobe-path! default-path))
+
+        ;; File / Open
+
+        (define (do-open control event)
+          (let ((path (get-file)))
+            (if path
+                (begin
+                  (init-file)
+                  (set-lightprobe-path! path)
+                  (load-file lightprobe-path))
+                (void))))
+
+        ;; ---------------------------------------------------------------------
+        ;; File / Save
+
+        (define (do-save control event)
+          (save-file lightprobe-path))
+
+        ;; File / Save As...
+
+        (define (do-save-as control event)
+          (let ((path (put-file)))
+            (if path
+                (begin
+                  (set-lightprobe-path! path)
+                  (save-file lightprobe-path))
+                (void))))
+
+        ;; ---------------------------------------------------------------------
+        ;; File / Export Cube...
+
+        (define (do-export-cube control event)
+          (let ((path (put-file)))
+            (if path (lp-export-cube   lightprobe path) #f)))
+
+        ;; File / Export Dome...
+
+        (define (do-export-dome control event)
+          (let ((path (put-file)))
+            (if path (lp-export-dome   lightprobe path) #f)))
+
+        ;; File / Export Sphere...
+
+        (define (do-export-sphere control event)
+          (let ((path (put-file)))
+            (if path (lp-export-sphere lightprobe path) #f)))
+
+        ;; ---------------------------------------------------------------------
+        ;; File / Tilt
+
+        (define (do-tilt control event)
+          (tilt-file))
+
+        ;; ---------------------------------------------------------------------
 
         (new menu-item% [parent file]
                         [label "New"]
@@ -565,7 +594,7 @@
                         [callback do-open]
                         [shortcut #\o])
 
-        (new separator-menu-item% [parent file])
+        (new separator-menu-item% [parent file]) ; -----------------------------
 
         (new menu-item% [parent file]
                         [label "Save"]
@@ -577,11 +606,15 @@
                         [shortcut #\s]
                         [shortcut-prefix (get-shifted-shortcut-prefix)])
 
-        (new separator-menu-item% [parent file])
+        (new separator-menu-item% [parent file]) ; -----------------------------
 
         (new menu-item% [parent file]
                         [label "Export Cube Map..."]
                         [callback do-export-cube]
+                        [shortcut #\e])
+        (new menu-item% [parent file]
+                        [label "Export Dome Map..."]
+                        [callback do-export-dome]
                         [shortcut #\e])
         (new menu-item% [parent file]
                         [label "Export Sphere Map..."]
@@ -589,12 +622,27 @@
                         [shortcut #\e]
                         [shortcut-prefix (get-shifted-shortcut-prefix)])
 
-        (new separator-menu-item% [parent file])
+        (new separator-menu-item% [parent file]) ; -----------------------------
 
         (new menu-item% [parent file]
                         [label "Tilt"]
                         [callback do-tilt]
-                        [shortcut #\t]))))
+                        [shortcut #\t]))
+
+      ;; -----------------------------------------------------------------------
+      ;; View Menu
+
+      (let ((view (new menu% [parent this] [label "View"])))
+
+        (new menu-item% [parent view]
+                        [label "Image"]
+                        [callback (lambda x (set-mode 0))]
+                        [shortcut #\i])
+        (new menu-item% [parent view]
+                        [label "Environment"]
+                        [callback (lambda x (set-mode 1))]
+                        [shortcut #\m]))
+      ))
 
   ;;----------------------------------------------------------------------------
 
@@ -666,13 +714,13 @@
       (define (recenter)
         (let* ((iw (get-contents-w))
                (ih (get-contents-h))
-               (hw (/ (send this get-width)  2))
-               (hh (/ (send this get-height) 2))
+               (ww (send this get-width))
+               (wh (send this get-height))
                (sx (send this get-scroll-pos 'horizontal))
                (sy (send this get-scroll-pos 'vertical)))
 
-          (set! center-x (/ (+ sx hw) iw))
-          (set! center-y (/ (+ sy hh) ih))))
+          (set! center-x (/ (+ sx (/ ww 2)) iw))
+          (set! center-y (/ (+ sy (/ wh 2)) ih))))
 
       ; The reshape function is responsible for handling changes to the shape
       ; of the canvas.  Beyond changes to the shape of the parent window, this
@@ -684,7 +732,6 @@
       (define/public (reshape)
         (let* ((iw (get-contents-w))
                (ih (get-contents-h))
-
                (ww (send this get-width))
                (wh (send this get-height))
 
@@ -860,25 +907,27 @@
       (define menus
         (new lp-menu-bar%
              [parent this]
-             [save-file  (lambda (path) (send images save-file path))]
-             [load-file  (lambda (path) (send images load-file path))]
-             [init-file  (lambda ()     (send images init-file))]
-             [tilt-file  (lambda ()     (send images tilt-file))]))
+             [save-file (lambda (path) (send images save-file path))]
+             [load-file (lambda (path) (send images load-file path))]
+             [init-file (lambda ()     (send images init-file))]
+             [tilt-file (lambda ()     (send images tilt-file))]
+             [set-mode  (lambda (i) (begin (send mode   set-mode i)
+                                           (send canvas refresh)))]))
 
       (define canvas
         (new lp-canvas%
              [parent mid]
              [min-width  640]
              [min-height 480]
-             [load-file  (lambda (path) (send images load-file path))]
-             [set-zoom   (lambda (z)    (send values  set-zoom z))]
-             [get-zoom   (lambda ()     (send values  get-zoom))]
-             [get-expo   (lambda ()     (send values  get-expo))]
-             [get-grid   (lambda ()     (send options get-grid))]
-             [get-mode   (lambda ()     (send mode    get-mode))]
-             [get-res    (lambda ()     (send options get-res))]
-             [get-visible (lambda ()    (send images  get-visible-descrs))]
-             [get-active  (lambda ()    (send images  get-active-descrs))]))
+             [load-file   (lambda (path) (send images load-file path))]
+             [set-zoom    (lambda (z)    (send values  set-zoom z))]
+             [get-zoom    (lambda ()     (send values  get-zoom))]
+             [get-expo    (lambda ()     (send values  get-expo))]
+             [get-grid    (lambda ()     (send options get-grid))]
+             [get-mode    (lambda ()     (send mode    get-mode))]
+             [get-res     (lambda ()     (send options get-res))]
+             [get-visible (lambda ()     (send images  get-visible-descrs))]
+             [get-active  (lambda ()     (send images  get-active-descrs))]))
 
       (define images
         (new image-list%
