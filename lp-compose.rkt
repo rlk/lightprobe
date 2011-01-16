@@ -810,8 +810,11 @@
                ;; Right-click drag = pan
 
                ((pan)
-                (let ((nx (max 0 (+ click-scroll-x (- click-x cx))))
-                      (ny (max 0 (+ click-scroll-y (- click-y cy)))))
+                (let* ((nx (+ click-scroll-x (- click-x cx)))
+                       (ny (+ click-scroll-y (- click-y cy)))
+                       (nw (send this get-scroll-range 'horizontal))
+                       (nh (send this get-scroll-range 'vertical)))
+
                   (send this set-scroll-pos 'horizontal nx)
                   (send this set-scroll-pos 'vertical   ny)
                   (recenter)

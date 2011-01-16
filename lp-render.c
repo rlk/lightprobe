@@ -11,6 +11,7 @@
 /* for more details.                                                          */
 
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,12 @@
 #include <GL/glew.h>
 
 #include "lp-render.h"
+
+/*----------------------------------------------------------------------------*/
+
+#define UNIFORM1I(p, s, i)    glUniform1i(glGetUniformLocation(p, s), i)
+#define UNIFORM1F(p, s, f)    glUniform1f(glGetUniformLocation(p, s), f)
+#define UNIFORM2F(p, s, a, b) glUniform2f(glGetUniformLocation(p, s), a, b)
 
 /*----------------------------------------------------------------------------*/
 
@@ -39,12 +46,19 @@ struct image
     float  values[LP_MAX_VALUE];
 };
 
+typedef struct image image;
+
 struct lightprobe
 {
-    GLuint circle_program;
-    GLuint sphere_program;
+    GLuint  pro_circle;
+    GLuint  pro_sphere;
 
-    struct image images[LP_MAX_IMAGE];
+    GLuint  vbo_sphere;
+    GLuint  ebo_sphere;
+
+    GLsizei num_sphere;
+
+    image images[LP_MAX_IMAGE];
 };
 
 /*----------------------------------------------------------------------------*/
@@ -369,38 +383,110 @@ static void free_program(GLuint program)
 
 /*----------------------------------------------------------------------------*/
 
+static GLsizei make_sphere(GLuint vbo, GLuint ebo)
+{
+    const GLsizei r = 16;
+    const GLsizei c = 32;
+
+    const GLsizei vsize = 3 * sizeof (GLfloat) * (r + 1) * (c + 1);
+    const GLsizei esize = 4 * sizeof (GLshort) * (r    ) * (c    );
+
+    GLfloat *v = 0;
+    GLshort *e = 0;
+
+    glBindBuffer(GL_ARRAY_BUFFER,         vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+
+    glBufferData(GL_ARRAY_BUFFER,         vsize, 0, GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, esize, 0, GL_STATIC_DRAW);
+
+    v = glMapBuffer(GL_ARRAY_BUFFER,         GL_WRITE_ONLY);
+    e = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY);
+
+    if (v && e)
+    {
+        GLsizei i;
+        GLsizei j;
+        GLsizei k;
+
+        /* Compute the vertex positions. */
+
+        for (k = 0, i = 0; i <= r; i++)
+            for    (j = 0; j <= c; j++, k++)
+            {
+                const double p = (      M_PI * i) / r - M_PI_2;
+                const double t = (2.0 * M_PI * j) / c - M_PI;
+
+                v[k * 3 + 0] = (GLfloat) (sin(t) * cos(p));
+                v[k * 3 + 1] = (GLfloat) (         sin(p));
+                v[k * 3 + 2] = (GLfloat) (cos(t) * cos(p));
+            }
+
+        /* Compute the face indices. */
+
+        for (k = 0, i = 0; i <  r; i++)
+            for    (j = 0; j <  c; j++, k++)
+            {
+                e[k * 4 + 0] = (GLushort) ((i + 0) * (c + 1) + (j + 0));
+                e[k * 4 + 1] = (GLushort) ((i + 0) * (c + 1) + (j + 1));
+                e[k * 4 + 2] = (GLushort) ((i + 1) * (c + 1) + (j + 1));
+                e[k * 4 + 3] = (GLushort) ((i + 1) * (c + 1) + (j + 0));
+            }
+    }
+
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+    glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
+
+    return r * c * 4;
+}
+
+static void gl_init(lightprobe *L)
+{
+    L->pro_circle = load_program(CIRCLE_VERT, CIRCLE_FRAG);
+    L->pro_sphere = load_program(SPHERE_VERT, SPHERE_FRAG);
+
+    glGenBuffers(1, &L->vbo_sphere);
+    glGenBuffers(1, &L->ebo_sphere);
+
+    L->num_sphere = make_sphere(L->vbo_sphere, L->ebo_sphere);
+}
+
+static void gl_free(lightprobe *L)
+{
+    free_program(L->pro_circle);
+    free_program(L->pro_sphere);
+
+    glDeleteBuffers(1, &L->vbo_sphere);
+    glDeleteBuffers(1, &L->ebo_sphere);
+}
+
+/*----------------------------------------------------------------------------*/
 /* Allocate and initialize a new, empty lightprobe object. Initialize all GL  */
 /* state needed to operate upon the input and render the output.              */
+/*                                                                            */
+/* GLEW initialization has to go somewhere, and it might as well go here. It  */
+/* would be ugly to require the user to call it, and it shouldn't hurt to do  */
+/* it multiple times.                                                         */
 
 lightprobe *lp_init()
 {
     lightprobe *L = 0;
 
-    /* GLEW initialization has to go somewhere, and it might as well go here. */
-    /* It would be ugly to require the user to call it, and it shouldn't hurt */
-    /* to call it multiple times.                                             */
-
     glewInit();
 
     if ((L = (lightprobe *) calloc (1, sizeof (lightprobe))))
-    {
-        L->circle_program = 0;
-        L->sphere_program = 0;
-
-        L->circle_program = load_program(CIRCLE_VERT, CIRCLE_FRAG);
-        L->sphere_program = load_program(SPHERE_VERT, SPHERE_FRAG);
-    }
+        gl_init(L);
 
     return L;
 }
 
+/* Bounce the GLSL state of the given lightprobe. This is useful during GLSL  */
+/* development                                                                */
+
 void lp_tilt(lightprobe *L)
 {
-    free_program(L->circle_program);
-    free_program(L->sphere_program);
-
-    L->circle_program = load_program(CIRCLE_VERT, CIRCLE_FRAG);
-    L->sphere_program = load_program(SPHERE_VERT, SPHERE_FRAG);
+    gl_free(L);
+    gl_init(L);
 }
 
 /* Release a lightprobe object and all state associated with it.  Unload any  */
@@ -415,9 +501,7 @@ void lp_free(lightprobe *L)
     for (i = 0; i < LP_MAX_IMAGE; i++)
         lp_del_image(L, i);
 
-    free_program(L->circle_program);
-    free_program(L->sphere_program);
-
+    gl_free(L);
     free(L);
 }
 
@@ -497,7 +581,7 @@ void lp_del_image(lightprobe *L, int i)
     if (L->images[i].flags & LP_FLAG_LOADED)
     {
         glDeleteTextures(1, &L->images[i].texture);
-        memset(L->images + i, 0, sizeof (struct image));
+        memset(L->images + i, 0, sizeof (image));
     }
 }
 
@@ -563,44 +647,53 @@ float lp_get_image_value(lightprobe *L, int i, int k)
 
 /*----------------------------------------------------------------------------*/
 
-static void render_circle_setup(lightprobe *L, int w, int h, float e, float z)
+/* Set up circle rendering to a viewport of width W and height H. Set the     */
+/* uniform values for exposure E.                                             */
+
+static void render_circle_setup(lightprobe *L, int w, int h, float e)
 {
+    /* Configure and clear the viewport. */
+
+    glViewport(0, 0, w, h);
+
     glClearColor(0.0, 0.0, 0.0, 0.0);
     glClear(GL_COLOR_BUFFER_BIT |
             GL_DEPTH_BUFFER_BIT);
 
-    glViewport(0, 0, w, h);
+    /* Load the matrices. */
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, w, h, 0, 0, 1);
+
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    glUseProgram(L->circle_program);
+    /* Ready the program. */
 
-    glUniform1f(glGetUniformLocation(L->circle_program, "image"),    0);
-    glUniform1f(glGetUniformLocation(L->circle_program, "zoom"),     z);
-    glUniform1f(glGetUniformLocation(L->circle_program, "exposure"), e);
+    glUseProgram(L->pro_circle);
 
-    glEnable(GL_TEXTURE_RECTANGLE_ARB);
+    UNIFORM1I(L->pro_circle, "image",    0);
+    UNIFORM1F(L->pro_circle, "exposure", e);
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
 }
 
-static void render_circle_image(lightprobe *L, int i, int w, int h,
+/* Render the image at index i scaled to zoom level Z, translated to panning  */
+/* position X Y.                                                              */
+
+static void render_circle_image(image *c, GLuint p, int w, int h,
                                 float x, float y, float z)
 {
-    struct image *c = L->images + i;
-
     int X = -(c->w * z - w) * x;
     int Y = -(c->h * z - h) * y;
 
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
 
-    glUniform2f(glGetUniformLocation(L->circle_program, "circle_p"),
-                c->values[LP_CIRCLE_X],
-                c->values[LP_CIRCLE_Y]);
-    glUniform1f(glGetUniformLocation(L->circle_program, "circle_r"),
-                c->values[LP_CIRCLE_RADIUS]);
+    UNIFORM1F(p, "circle_r", c->values[LP_CIRCLE_RADIUS]);
+    UNIFORM2F(p, "circle_p", c->values[LP_CIRCLE_X],
+                             c->values[LP_CIRCLE_Y]);
 
     glPushMatrix();
     {
@@ -619,6 +712,10 @@ static void render_circle_image(lightprobe *L, int i, int w, int h,
     glPopMatrix();
 }
 
+/* Render all loaded, visible images to a viewport with width W and height H. */
+/* F gives rendering option flags. X and Y give normalized pan positions.     */
+/* E is exposure, and Z is zoom.                                              */
+
 void lp_render_circle(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
@@ -626,46 +723,88 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
     assert(L);
 
-    render_circle_setup(L, w, h, e, z);
+    render_circle_setup(L, w, h, e);
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
         if ((L->images[i].flags & LP_FLAG_LOADED) != 0 &&
             (L->images[i].flags & LP_FLAG_HIDDEN) == 0)
-            render_circle_image(L, i, w, h, x, y, z);
+            render_circle_image(L->images + i, L->pro_circle, w, h, x, y, z);
 }
 
 /*----------------------------------------------------------------------------*/
 
+static void render_sphere_setup(lightprobe *L, int w, int h,
+                                float x, float y, float e, float z)
+{
+    const GLdouble H = 0.5 * ((GLdouble) w / (GLdouble) h) / z;
+    const GLdouble V = 0.5 * (                        1.0) / z;
+
+    /* Configure and clear the viewport. */
+
+    glViewport(0, 0, w, h);
+
+    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glClear(GL_COLOR_BUFFER_BIT |
+            GL_DEPTH_BUFFER_BIT);
+
+    /* Load the matrices. */
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glFrustum(-H, +H, -V, +V, 1, 10);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glTranslated(0.0, 0.0, -2.0);
+    glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
+    glRotated(180.0 * y -  90.0, 1.0, 0.0, 0.0);
+
+    /* Bind the array buffers. */
+
+    glBindBuffer(GL_ARRAY_BUFFER,         L->vbo_sphere);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, L->ebo_sphere);
+    
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glVertexPointer(3, GL_FLOAT, 0, 0);
+
+    /* Ready the program. */
+
+    glUseProgram(L->pro_sphere);
+
+    UNIFORM1I(L->pro_sphere, "image",    0);
+    UNIFORM1F(L->pro_sphere, "exposure", e);
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+}
+
+static void render_sphere_image(image *c, GLuint p, GLsizei n)
+{
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
+
+    UNIFORM1F(p, "sphere_e", c->values[LP_SPHERE_ELEVATION]);
+    UNIFORM1F(p, "sphere_a", c->values[LP_SPHERE_AZIMUTH]);
+    UNIFORM1F(p, "sphere_r", c->values[LP_SPHERE_ROLL]);
+    UNIFORM1F(p, "circle_r", c->values[LP_CIRCLE_RADIUS]);
+    UNIFORM2F(p, "circle_p", c->values[LP_CIRCLE_X],
+                             c->values[LP_CIRCLE_Y]);
+
+    glDrawElements(GL_QUADS, n, GL_UNSIGNED_SHORT, 0);
+}
+
 void lp_render_sphere(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
-    if (L)
-    {
-        GLdouble l = (GLdouble) w / (GLdouble) h;
+    int i;
 
-        glClearColor(0.2, 0.2, 0.2, 0.0);
-        glClear(GL_COLOR_BUFFER_BIT);
+    assert(L);
 
-        glViewport(0, 0, w, h);
+    render_sphere_setup(L, w, h, x, y, e, z);
 
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glFrustum(-l, l, -1.0, 1.0, 2.0, 10.0);
-
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
-        glTranslated(0.0, 0.0, -5.0);
-
-        glBegin(GL_QUADS);
-        {
-            glColor4d(1.0, 1.0, 0.0, 1.0);
-            glVertex3d(0.0, 0.0, 0.0);
-            glVertex3d(1.0, 0.0, 0.0);
-            glVertex3d(1.0, 1.0, 0.0);
-            glVertex3d(0.0, 1.0, 0.0);
-        }
-        glEnd();
-    }
+    for (i = 0; i < LP_MAX_IMAGE; i++)
+        if ((L->images[i].flags & LP_FLAG_LOADED) != 0 &&
+            (L->images[i].flags & LP_FLAG_HIDDEN) == 0)
+            render_sphere_image(L->images + i, L->pro_sphere, L->num_sphere);
 }
 
 /*----------------------------------------------------------------------------*/
