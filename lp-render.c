@@ -28,10 +28,14 @@
 
 /*----------------------------------------------------------------------------*/
 
-#define CIRCLE_VERT "lp-circle.vert"
-#define CIRCLE_FRAG "lp-circle.frag"
-#define SPHERE_VERT "lp-sphere.vert"
-#define SPHERE_FRAG "lp-sphere.frag"
+#define CIRCLE_VERT         "lp-circle.vert"
+#define CIRCLE_FRAG         "lp-circle.frag"
+#define SPHERE_ACC_VERT     "lp-sphere-acc.vert"
+#define SPHERE_FIN_VERT     "lp-sphere-fin.vert"
+#define SPHERE_DAT_ACC_FRAG "lp-sphere-dat-acc.frag"
+#define SPHERE_DAT_FIN_FRAG "lp-sphere-dat-fin.frag"
+#define SPHERE_RES_ACC_FRAG "lp-sphere-res-acc.frag"
+#define SPHERE_RES_FIN_FRAG "lp-sphere-res-fin.frag"
 
 #define LP_MAX_IMAGE 8
 
@@ -51,12 +55,21 @@ typedef struct image image;
 struct lightprobe
 {
     GLuint  pro_circle;
-    GLuint  pro_sphere;
+    GLuint  pro_sphere_dat_acc;
+    GLuint  pro_sphere_dat_fin;
+    GLuint  pro_sphere_res_acc;
+    GLuint  pro_sphere_res_fin;
 
     GLuint  vbo_sphere;
     GLuint  ebo_sphere;
 
     GLsizei num_sphere;
+    GLsizei w;
+    GLsizei h;
+
+    GLuint  frame;
+    GLuint  color;
+    GLuint  depth;
 
     image images[LP_MAX_IMAGE];
 };
@@ -269,7 +282,8 @@ static int check_shader_log(GLuint shader, const char *path)
     return 1;
 }
 
-static int check_program_log(GLuint program)
+static int check_program_log(GLuint program, const char *vert_path,
+                                             const char *frag_path)
 {
     GLchar *p = 0;
     GLint   s = 0;
@@ -286,7 +300,8 @@ static int check_program_log(GLuint program)
         {
             glGetProgramInfoLog(program, n, NULL, p);
 
-            fprintf(stderr, "OpenGL Program Error:\n%s", p);
+            fprintf(stderr, "OpenGL Linker Error:\n\t%s\n\t%s\n%s",
+                    vert_path, frag_path, p);
             free(p);
         }
         return 0;
@@ -352,7 +367,7 @@ static GLuint load_program(const char *path_vert, const char *path_frag)
 
         /* If the program is valid, return it.  Else, delete it. */
 
-        if (check_program_log(program))
+        if (check_program_log(program, path_vert, path_frag))
             return program;
         else
             glDeleteProgram(program);
@@ -379,6 +394,76 @@ static void free_program(GLuint program)
     if (count > 1) glDeleteShader(shaders[1]);
 
     glDeleteProgram(program);
+}
+
+/*----------------------------------------------------------------------------*/
+
+static void init_color(GLenum target, GLuint color, GLsizei w, GLsizei h)
+{
+    glBindTexture(target, color);
+
+    glTexImage2D(target, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, NULL);
+
+    glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(target, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+    glTexParameteri(target, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+}
+
+static void init_depth(GLenum target, GLuint depth, GLsizei w, GLsizei h)
+{
+    glBindTexture(target, depth);
+
+    glTexImage2D(target, 0, GL_DEPTH_COMPONENT24, w, h, 0,
+                 GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL);
+
+    glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(target, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+    glTexParameteri(target, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+}
+
+static void test_frame()
+{
+    switch (glCheckFramebufferStatus(GL_FRAMEBUFFER))
+    {
+    case GL_FRAMEBUFFER_COMPLETE:
+        break; 
+    case GL_FRAMEBUFFER_UNDEFINED:
+        fprintf(stderr, "Framebuffer undefined\n");                     break;
+    case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT:
+        fprintf(stderr, "Framebuffer incomplete attachment\n");         break;
+    case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT:
+        fprintf(stderr, "Framebuffer incomplete missing attachment\n"); break;
+    case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER:
+        fprintf(stderr, "Framebuffer incomplete draw buffer\n");        break;
+    case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER:
+        fprintf(stderr, "Framebuffer incomplete read buffer\n");        break;
+    case GL_FRAMEBUFFER_UNSUPPORTED:
+        fprintf(stderr, "Framebuffer unsupported\n");                   break;
+    case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE:
+        fprintf(stderr, "Framebuffer incomplete multisample\n");        break;
+    default:
+        fprintf(stderr, "Framebuffer error\n");                         break;
+    }
+}
+
+void init_frame(GLuint frame, GLuint color, GLuint depth, GLsizei w, GLsizei h)
+{
+    GLenum target = GL_TEXTURE_RECTANGLE_ARB;
+    
+    init_color(target, color, w, h);
+    init_depth(target, depth, w, h);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, frame);
+    {
+        glFramebufferTexture2D(GL_FRAMEBUFFER,
+                               GL_COLOR_ATTACHMENT0, target, color, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,
+                               GL_DEPTH_ATTACHMENT,  target, depth, 0);
+        test_frame();
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -453,7 +538,7 @@ static GLsizei make_sphere(GLuint vbo, GLuint ebo)
 /* Render the sphere defined by the previous function. Pass the normal and    */
 /* tangent vectors along using the position and normal vertex attributes.     */
 
-static void draw_sphere(GLsizei n, GLuint vbo, GLuint ebo)
+static void draw_sphere(GLuint vbo, GLuint ebo, GLsizei n)
 {
     size_t s = 3 * sizeof (GLfloat);
 
@@ -479,8 +564,21 @@ static void draw_sphere(GLsizei n, GLuint vbo, GLuint ebo)
 
 static void gl_init(lightprobe *L)
 {
-    L->pro_circle = load_program(CIRCLE_VERT, CIRCLE_FRAG);
-    L->pro_sphere = load_program(SPHERE_VERT, SPHERE_FRAG);
+    /* Initialize all GLSL. */
+
+    L->pro_circle         = load_program(CIRCLE_VERT, CIRCLE_FRAG);
+    L->pro_sphere_dat_acc = load_program(SPHERE_ACC_VERT, SPHERE_DAT_ACC_FRAG);
+    L->pro_sphere_dat_fin = load_program(SPHERE_FIN_VERT, SPHERE_DAT_FIN_FRAG);
+    L->pro_sphere_res_acc = load_program(SPHERE_ACC_VERT, SPHERE_RES_ACC_FRAG);
+    L->pro_sphere_res_fin = load_program(SPHERE_FIN_VERT, SPHERE_RES_FIN_FRAG);
+
+    /* Generate off-screen render buffers. */
+
+    glGenFramebuffers(1, &L->frame);
+    glGenTextures    (1, &L->color);
+    glGenTextures    (1, &L->depth);
+
+    /* Generate and initialize vertex buffer objects. */
 
     glGenBuffers(1, &L->vbo_sphere);
     glGenBuffers(1, &L->ebo_sphere);
@@ -490,11 +588,17 @@ static void gl_init(lightprobe *L)
 
 static void gl_free(lightprobe *L)
 {
-    free_program(L->pro_circle);
-    free_program(L->pro_sphere);
-
     glDeleteBuffers(1, &L->vbo_sphere);
     glDeleteBuffers(1, &L->ebo_sphere);
+
+    free_program(L->pro_circle);
+    free_program(L->pro_sphere_dat_acc);
+    free_program(L->pro_sphere_dat_fin);
+    free_program(L->pro_sphere_res_acc);
+    free_program(L->pro_sphere_res_fin);
+
+    L->w = 0;
+    L->h = 0;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -770,21 +874,13 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
 /*----------------------------------------------------------------------------*/
 
-static void render_sphere_setup(lightprobe *L, int w, int h,
-                                float x, float y, float e, float z)
+/* Apply transformation matrices for rendering the interactive sphere view to */
+/* a viewport with width W and height H, at pan position X Y, and zoom Z.     */
+
+static void transform_view(int w, int h, float x, float y, float z)
 {
-    const GLdouble H = 0.5 * ((GLdouble) w / (GLdouble) h) / z;
-    const GLdouble V = 0.5 * (                        1.0) / z;
-
-    /* Configure and clear the viewport. */
-
-    glViewport(0, 0, w, h);
-
-    glClearColor(0.0, 0.0, 0.0, 0.0);
-    glClear(GL_COLOR_BUFFER_BIT |
-            GL_DEPTH_BUFFER_BIT);
-
-    /* Load the matrices. */
+    const GLdouble H = 0.5 * w / h / z;
+    const GLdouble V = 0.5         / z;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -795,22 +891,39 @@ static void render_sphere_setup(lightprobe *L, int w, int h,
     glTranslated(0.0, 0.0, -2.0);
     glRotated(180.0 * y -  90.0, 1.0, 0.0, 0.0);
     glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
-
-    /* Ready the program. */
-
-    glUseProgram(L->pro_sphere);
-
-    UNIFORM1I(L->pro_sphere, "image",    0);
-    UNIFORM1F(L->pro_sphere, "exposure", e);
-
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
 }
 
-static void render_sphere_image(image *c, GLuint p, GLsizei n, GLuint v, GLuint e)
+#if 0
+/* Apply transformation matrices for rendering cube map side I to an image    */
+/* with width and height S.                                                   */
+
+static void transform_cube(int s, int i)
 {
+}
+
+/* Apply transformation matrices for rendering a full-dome map to an image    */
+/* with width and height S.                                                   */
+
+static void transform_dome(int s)
+{
+}
+
+/* Apply transformation matrices for rendering a sphere map in an image with  */
+/* width and height S.                                                        */
+
+static void transform_sphere(int s)
+{
+}
+#endif
+/*----------------------------------------------------------------------------*/
+
+static void draw_sphere_image(image *c, GLuint p, GLuint vbo, GLuint ebo, GLsizei n)
+{
+    glUseProgram(p);
+
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
 
+    UNIFORM1I(p, "image",    0);
     UNIFORM1F(p, "sphere_e", c->values[LP_SPHERE_ELEVATION]);
     UNIFORM1F(p, "sphere_a", c->values[LP_SPHERE_AZIMUTH]);
     UNIFORM1F(p, "sphere_r", c->values[LP_SPHERE_ROLL]);
@@ -818,23 +931,69 @@ static void render_sphere_image(image *c, GLuint p, GLsizei n, GLuint v, GLuint 
     UNIFORM2F(p, "circle_p", c->values[LP_CIRCLE_X],
                              c->values[LP_CIRCLE_Y]);
 
-    draw_sphere(n, v, e);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+
+    draw_sphere(vbo, ebo, n);
+}
+
+static void draw_sphere_screen(GLuint p, GLfloat e, GLuint color)
+{
+    glUseProgram(p);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, color);
+
+    UNIFORM1I(p, "image",    0);
+    UNIFORM1F(p, "exposure", e);
+
+    glBegin(GL_QUADS);
+    {
+        glVertex2i(-1, -1);
+        glVertex2i(+1, -1);
+        glVertex2i(+1, +1);
+        glVertex2i(-1, +1);
+    }
+    glEnd();
 }
 
 void lp_render_sphere(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
+    GLuint acc = (f & LP_RENDER_RES) ? L->pro_sphere_res_acc
+                                     : L->pro_sphere_dat_acc;
+    GLuint fin = (f & LP_RENDER_RES) ? L->pro_sphere_res_fin
+                                     : L->pro_sphere_dat_fin;
     int i;
 
     assert(L);
 
-    render_sphere_setup(L, w, h, x, y, e, z);
+    glViewport(0, 0, w, h);
+
+    /* Resize the accumulation buffer to match the viewport as necessary. */
+
+    if (L->w != (GLsizei) w || L->h != (GLsizei) h)
+    {
+        L->w  = (GLsizei) w;
+        L->h  = (GLsizei) h;
+        init_frame(L->frame, L->color, L->depth, L->w, L->h);
+    }
+
+    /* Render all images to the accumulation buffer. */
+
+    glBindFramebuffer(GL_FRAMEBUFFER, L->frame);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    transform_view(w, h, x, y, z);
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
-        if ((L->images[i].flags & LP_FLAG_LOADED) != 0 &&
-            (L->images[i].flags & LP_FLAG_HIDDEN) == 0)
-            render_sphere_image(L->images + i, L->pro_sphere, L->num_sphere,
-                                               L->vbo_sphere, L->ebo_sphere);
-}
+        if (LP_DRAW(L->images[i].flags))
+            draw_sphere_image(L->images + i, acc,
+                              L->vbo_sphere, L->ebo_sphere, L->num_sphere);
 
+    /* Map the accumulation buffer to the screen. */
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    draw_sphere_screen(fin, e, L->color);
+}
 /*----------------------------------------------------------------------------*/

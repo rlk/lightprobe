@@ -590,7 +590,7 @@
                         [callback do-new]
                         [shortcut #\n])
         (new menu-item% [parent file]
-                        [label "Open"]
+                        [label "Open..."]
                         [callback do-open]
                         [shortcut #\o])
 
@@ -635,13 +635,25 @@
       (let ((view (new menu% [parent this] [label "View"])))
 
         (new menu-item% [parent view]
-                        [label "Image"]
+                        [label "Input Image"]
                         [callback (lambda x (set-mode 0))]
                         [shortcut #\i])
         (new menu-item% [parent view]
-                        [label "Environment"]
+                        [label "Output Mapping"]
                         [callback (lambda x (set-mode 1))]
-                        [shortcut #\m]))
+                        [shortcut #\m])
+
+        (new separator-menu-item% [parent view]) ; -----------------------------
+
+        (new menu-item% [parent view]
+                        [label "Image Pixels"]
+                        [callback (lambda x (set-mode 0))]
+                        [shortcut #\p])
+        (new menu-item% [parent view]
+                        [label "Image Resolution"]
+                        [callback (lambda x (set-mode 1))]
+                        [shortcut #\r]))
+
       ))
 
   ;;----------------------------------------------------------------------------
