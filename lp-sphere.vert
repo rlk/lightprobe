@@ -1,7 +1,11 @@
 
+varying vec3 N;
+varying vec3 T;
+
 void main()
 {
-    gl_TexCoord[0] = gl_Vertex;
+    N = gl_Vertex.xyz;
+    T = gl_Normal.xyz;
     gl_Position = ftransform();
 }
 

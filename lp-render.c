@@ -383,33 +383,36 @@ static void free_program(GLuint program)
 
 /*----------------------------------------------------------------------------*/
 
+/* Initialize the vertex buffers for a sphere. Compute a normal and tangent   */
+/* vector for each vertex, noting that position is trivially derived from     */
+/* normal.                                                                    */
+
 static GLsizei make_sphere(GLuint vbo, GLuint ebo)
 {
-    const GLsizei r = 16;
-    const GLsizei c = 32;
+    const GLsizei r = 32;
+    const GLsizei c = 64;
 
-    const GLsizei vsize = 3 * sizeof (GLfloat) * (r + 1) * (c + 1);
-    const GLsizei esize = 4 * sizeof (GLshort) * (r    ) * (c    );
+    GLsizei i;
+    GLsizei j;
+    GLsizei k;
 
     GLfloat *v = 0;
     GLshort *e = 0;
 
-    glBindBuffer(GL_ARRAY_BUFFER,         vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    /* Set the buffer sizes. */
 
+    const GLsizei vsize = 6 * sizeof (GLfloat) * (r + 1) * (c + 1);
+    const GLsizei esize = 4 * sizeof (GLshort) * (r    ) * (c    );
+
+    glBindBuffer(GL_ARRAY_BUFFER,         vbo);
     glBufferData(GL_ARRAY_BUFFER,         vsize, 0, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, esize, 0, GL_STATIC_DRAW);
 
-    v = glMapBuffer(GL_ARRAY_BUFFER,         GL_WRITE_ONLY);
-    e = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY);
+    /* Compute the vertex normal and tangent. */
 
-    if (v && e)
-    {
-        GLsizei i;
-        GLsizei j;
-        GLsizei k;
-
-        /* Compute the vertex positions. */
+    if ((v = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)))
 
         for (k = 0, i = 0; i <= r; i++)
             for    (j = 0; j <= c; j++, k++)
@@ -417,28 +420,62 @@ static GLsizei make_sphere(GLuint vbo, GLuint ebo)
                 const double p = (      M_PI * i) / r - M_PI_2;
                 const double t = (2.0 * M_PI * j) / c - M_PI;
 
-                v[k * 3 + 0] = (GLfloat) (sin(t) * cos(p));
-                v[k * 3 + 1] = (GLfloat) (         sin(p));
-                v[k * 3 + 2] = (GLfloat) (cos(t) * cos(p));
+                v[k * 6 + 0] =  (GLfloat) (sin(t) * cos(p));
+                v[k * 6 + 1] =  (GLfloat) (         sin(p));
+                v[k * 6 + 2] =  (GLfloat) (cos(t) * cos(p));
+
+                v[k * 6 + 3] =  (GLfloat) cos(t);
+                v[k * 6 + 4] =  (GLfloat)   0.0f;
+                v[k * 6 + 5] = -(GLfloat) sin(t);
             }
 
-        /* Compute the face indices. */
+    /* Compute the face indices. */
+
+    if ((e = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY)))
 
         for (k = 0, i = 0; i <  r; i++)
             for    (j = 0; j <  c; j++, k++)
             {
-                e[k * 4 + 0] = (GLushort) ((i + 0) * (c + 1) + (j + 0));
-                e[k * 4 + 1] = (GLushort) ((i + 0) * (c + 1) + (j + 1));
+                e[k * 4 + 0] = (GLushort) ((i    ) * (c + 1) + (j    ));
+                e[k * 4 + 1] = (GLushort) ((i    ) * (c + 1) + (j + 1));
                 e[k * 4 + 2] = (GLushort) ((i + 1) * (c + 1) + (j + 1));
-                e[k * 4 + 3] = (GLushort) ((i + 1) * (c + 1) + (j + 0));
+                e[k * 4 + 3] = (GLushort) ((i + 1) * (c + 1) + (j    ));
             }
-    }
+
+    /* Unmap and return the number of generated elements. */
 
     glUnmapBuffer(GL_ARRAY_BUFFER);
     glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
 
     return r * c * 4;
 }
+
+/* Render the sphere defined by the previous function. Pass the normal and    */
+/* tangent vectors along using the position and normal vertex attributes.     */
+
+static void draw_sphere(GLsizei n, GLuint vbo, GLuint ebo)
+{
+    size_t s = 3 * sizeof (GLfloat);
+
+    glBindBuffer(GL_ARRAY_BUFFER,         vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    {
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_NORMAL_ARRAY);
+        {
+            glVertexPointer(3, GL_FLOAT, 2 * s, (const GLvoid *) 0);
+            glNormalPointer(   GL_FLOAT, 2 * s, (const GLvoid *) s);
+
+            glDrawElements(GL_QUADS, n, GL_UNSIGNED_SHORT, 0);
+        }
+        glDisableClientState(GL_NORMAL_ARRAY);
+        glDisableClientState(GL_VERTEX_ARRAY);
+    }
+    glBindBuffer(GL_ARRAY_BUFFER,         0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+}
+
+/*----------------------------------------------------------------------------*/
 
 static void gl_init(lightprobe *L)
 {
@@ -756,16 +793,8 @@ static void render_sphere_setup(lightprobe *L, int w, int h,
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     glTranslated(0.0, 0.0, -2.0);
-    glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
     glRotated(180.0 * y -  90.0, 1.0, 0.0, 0.0);
-
-    /* Bind the array buffers. */
-
-    glBindBuffer(GL_ARRAY_BUFFER,         L->vbo_sphere);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, L->ebo_sphere);
-    
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glVertexPointer(3, GL_FLOAT, 0, 0);
+    glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
 
     /* Ready the program. */
 
@@ -778,7 +807,7 @@ static void render_sphere_setup(lightprobe *L, int w, int h,
     glEnable(GL_CULL_FACE);
 }
 
-static void render_sphere_image(image *c, GLuint p, GLsizei n)
+static void render_sphere_image(image *c, GLuint p, GLsizei n, GLuint v, GLuint e)
 {
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
 
@@ -789,7 +818,7 @@ static void render_sphere_image(image *c, GLuint p, GLsizei n)
     UNIFORM2F(p, "circle_p", c->values[LP_CIRCLE_X],
                              c->values[LP_CIRCLE_Y]);
 
-    glDrawElements(GL_QUADS, n, GL_UNSIGNED_SHORT, 0);
+    draw_sphere(n, v, e);
 }
 
 void lp_render_sphere(lightprobe *L, int f, int w, int h,
@@ -804,7 +833,8 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
     for (i = 0; i < LP_MAX_IMAGE; i++)
         if ((L->images[i].flags & LP_FLAG_LOADED) != 0 &&
             (L->images[i].flags & LP_FLAG_HIDDEN) == 0)
-            render_sphere_image(L->images + i, L->pro_sphere, L->num_sphere);
+            render_sphere_image(L->images + i, L->pro_sphere, L->num_sphere,
+                                               L->vbo_sphere, L->ebo_sphere);
 }
 
 /*----------------------------------------------------------------------------*/
