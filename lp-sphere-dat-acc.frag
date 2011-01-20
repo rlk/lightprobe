@@ -13,15 +13,24 @@ uniform float         exposure;
 
 /*----------------------------------------------------------------------------*/
 
+vec2 unwrap(vec3 n)
+{
+    float kr = length(n.xy);
+    float ks = sin(0.5 * acos(n.z));
+
+    vec2 p = circle_p - circle_r * n.xy * ks / kr;
+
+    return p;
+}
+
+/*----------------------------------------------------------------------------*/
+
 void main()
 {
     vec3 n = normalize(N);
     vec3 t = normalize(T);
 
-    float kr = length(n.xy);
-    float ks = sin(0.5 * acos(n.z));
-
-    vec2 p = circle_p - circle_r * n.xy * ks / kr;
+    vec2 p = unwrap(n);
 
     vec4 c = texture2DRect(image, p);
 

@@ -25,7 +25,7 @@ void main()
             + impulse(circle_r * 0.50, d * 1.0, r)
             + impulse(circle_r * 0.01, d * 1.0, r);
 
-    gl_FragColor = vec4(mix(C, 1.0 - C, k), c.a);
+    gl_FragColor = vec4(mix(C, 1.0 - C, k), 1.0);
 }
 
 /*----------------------------------------------------------------------------*/

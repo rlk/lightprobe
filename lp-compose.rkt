@@ -391,7 +391,8 @@
                  (if (send images is-selected? i)
                      (lp-set-image-flags lightprobe d 2)
                      (lp-clr-image-flags lightprobe d 2))))
-             (get-indices)))
+             (get-indices))
+        (notify))
 
       ; GUI sub-elements
 

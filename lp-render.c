@@ -791,7 +791,7 @@ float lp_get_image_value(lightprobe *L, int i, int k)
 /* Set up circle rendering to a viewport of width W and height H. Set the     */
 /* uniform values for exposure E.                                             */
 
-static void render_circle_setup(lightprobe *L, int w, int h, float e)
+static void draw_circle_setup(lightprobe *L, int w, int h, float e)
 {
     /* Configure and clear the viewport. */
 
@@ -824,7 +824,7 @@ static void render_circle_setup(lightprobe *L, int w, int h, float e)
 /* Render the image at index i scaled to zoom level Z, translated to panning  */
 /* position X Y.                                                              */
 
-static void render_circle_image(image *c, GLuint p, int w, int h,
+static void draw_circle_image(image *c, GLuint p, int w, int h,
                                 float x, float y, float z)
 {
     int X = -(c->w * z - w) * x;
@@ -864,12 +864,11 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
     assert(L);
 
-    render_circle_setup(L, w, h, e);
+    draw_circle_setup(L, w, h, e);
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
-        if ((L->images[i].flags & LP_FLAG_LOADED) != 0 &&
-            (L->images[i].flags & LP_FLAG_HIDDEN) == 0)
-            render_circle_image(L->images + i, L->pro_circle, w, h, x, y, z);
+        if (LP_MOVE(L->images[i].flags))
+            draw_circle_image(L->images + i, L->pro_circle, w, h, x, y, z);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -917,7 +916,8 @@ static void transform_sphere(int s)
 #endif
 /*----------------------------------------------------------------------------*/
 
-static void draw_sphere_image(image *c, GLuint p, GLuint vbo, GLuint ebo, GLsizei n)
+static void draw_sphere_image(GLuint vbo, GLuint ebo, GLsizei n,
+                              image *c, GLuint p)
 {
     glUseProgram(p);
 
@@ -935,6 +935,24 @@ static void draw_sphere_image(image *c, GLuint p, GLuint vbo, GLuint ebo, GLsize
     glEnable(GL_CULL_FACE);
 
     draw_sphere(vbo, ebo, n);
+}
+
+static void draw_sphere_grid(GLuint vbo, GLuint ebo, GLsizei n)
+{
+    glUseProgram(0);
+
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_LINE_SMOOTH);
+
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glLineWidth(0.5f);
+    glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    draw_sphere(vbo, ebo, n);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 static void draw_sphere_screen(GLuint p, GLfloat e, GLuint color)
@@ -986,8 +1004,8 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
 
     for (i = 0; i < LP_MAX_IMAGE; i++)
         if (LP_DRAW(L->images[i].flags))
-            draw_sphere_image(L->images + i, acc,
-                              L->vbo_sphere, L->ebo_sphere, L->num_sphere);
+            draw_sphere_image(L->vbo_sphere, L->ebo_sphere, L->num_sphere,
+                              L->images + i, acc);
 
     /* Map the accumulation buffer to the screen. */
 
@@ -995,5 +1013,7 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     draw_sphere_screen(fin, e, L->color);
+
+    draw_sphere_grid(L->vbo_sphere, L->ebo_sphere, L->num_sphere);
 }
 /*----------------------------------------------------------------------------*/

@@ -44,6 +44,7 @@ void lp_set_image_flags(lightprobe *lp, int i, int f);
 void lp_clr_image_flags(lightprobe *lp, int i, int f);
 int  lp_get_image_flags(lightprobe *lp, int i);
 
+#define LP_MOVE(f) (((f & LP_FLAG_LOADED) != 0) && ((f & LP_FLAG_ACTIVE) != 0))
 #define LP_DRAW(f) (((f & LP_FLAG_LOADED) != 0) && ((f & LP_FLAG_HIDDEN) == 0))
 
 /*----------------------------------------------------------------------------*/
