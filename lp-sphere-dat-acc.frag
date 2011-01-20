@@ -18,7 +18,8 @@ vec2 unwrap(vec3 n)
     float kr = length(n.xy);
     float ks = sin(0.5 * acos(n.z));
 
-    vec2 p = circle_p - circle_r * n.xy * ks / kr;
+    vec2 v = vec2(n.x, -n.y);
+    vec2 p = circle_p + circle_r * v * ks / kr;
 
     return p;
 }

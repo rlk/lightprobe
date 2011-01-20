@@ -522,9 +522,9 @@ static GLsizei make_sphere(GLuint vbo, GLuint ebo)
             for    (j = 0; j <  c; j++, k++)
             {
                 e[k * 4 + 0] = (GLushort) ((i    ) * (c + 1) + (j    ));
-                e[k * 4 + 1] = (GLushort) ((i    ) * (c + 1) + (j + 1));
+                e[k * 4 + 1] = (GLushort) ((i + 1) * (c + 1) + (j    ));
                 e[k * 4 + 2] = (GLushort) ((i + 1) * (c + 1) + (j + 1));
-                e[k * 4 + 3] = (GLushort) ((i + 1) * (c + 1) + (j    ));
+                e[k * 4 + 3] = (GLushort) ((i    ) * (c + 1) + (j + 1));
             }
 
     /* Unmap and return the number of generated elements. */
@@ -926,7 +926,7 @@ static void transform_sphere(int s)
 #endif
 /*----------------------------------------------------------------------------*/
 
-static void draw_sphere_image(GLuint vbo, GLuint ebo, GLsizei n,
+static float draw_sphere_image(GLuint vbo, GLuint ebo, GLsizei n,
                               image *c, GLuint p)
 {
     glUseProgram(p);
@@ -941,10 +941,14 @@ static void draw_sphere_image(GLuint vbo, GLuint ebo, GLsizei n,
     UNIFORM2F(p, "circle_p", c->values[LP_CIRCLE_X],
                              c->values[LP_CIRCLE_Y]);
 
-    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
 
     draw_sphere(vbo, ebo, n);
+
+    return 1.0f;
 }
 
 static void draw_sphere_grid(GLuint vbo, GLuint ebo, GLsizei n)
@@ -965,12 +969,13 @@ static void draw_sphere_grid(GLuint vbo, GLuint ebo, GLsizei n)
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-static void draw_sphere_screen(GLuint p, GLfloat e, GLuint color)
+static void draw_sphere_screen(GLuint p, GLfloat e, GLfloat c, GLuint color)
 {
     glUseProgram(p);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, color);
 
     UNIFORM1I(p, "image",    0);
+    UNIFORM1F(p, "count",    c);
     UNIFORM1F(p, "exposure", e);
 
     glBegin(GL_QUADS);
@@ -990,6 +995,7 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
                                      : L->pro_sphere_dat_acc;
     GLuint fin = (f & LP_RENDER_RES) ? L->pro_sphere_res_fin
                                      : L->pro_sphere_dat_fin;
+    float c = 0.0;
     int i;
 
     assert(L);
@@ -1016,20 +1022,21 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
     {
         for (i = 0; i < LP_MAX_IMAGE; i++)
             if (L->images[i].texture)
-                draw_sphere_image(L->vbo_sphere, L->ebo_sphere, L->num_sphere,
-                                  L->images + i, acc);
+                c += draw_sphere_image(L->vbo_sphere, L->ebo_sphere,
+                                       L->num_sphere, L->images + i, acc);
     }
     else
-        draw_sphere_image(L->vbo_sphere, L->ebo_sphere, L->num_sphere,
-                          L->images + L->select, acc);
+        c += draw_sphere_image(L->vbo_sphere, L->ebo_sphere,
+                               L->num_sphere, L->images + L->select, acc);
 
     /* Map the accumulation buffer to the screen. */
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    draw_sphere_screen(fin, e, L->color);
+    draw_sphere_screen(fin, e, c, L->color);
 
-    draw_sphere_grid(L->vbo_sphere, L->ebo_sphere, L->num_sphere);
+    if (f & LP_RENDER_GRID)
+        draw_sphere_grid(L->vbo_sphere, L->ebo_sphere, L->num_sphere);
 }
 /*----------------------------------------------------------------------------*/

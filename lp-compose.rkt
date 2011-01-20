@@ -209,54 +209,6 @@
       (send this accept-drop-files #t)))
 
   ;;----------------------------------------------------------------------------
-  ;; The lightprobe viewer has two modes: Image view and Environment view.
-  ;; The view-mode preference group manages the current mode state.
-
-  (define view-mode%
-    (class preferences-group%
-      (super-new [fraction 0.4])
-      (init-field notify)
-
-      ; GUI sub-elements
-      
-      (define label (new message%          [parent this]
-                                           [label "Mode:"]))
-      (define radio (new simple-radio-box% [parent this]
-                                           [callback (lambda x (notify))]
-                                           [choices '("Image" "Environment")]))
-      ; Public interface
-
-      (define/public (set-mode n) (send radio set-selection n))
-      (define/public (get-mode)   (send radio get-selection))))
-
-  ;;----------------------------------------------------------------------------
-  ;; The lightprobe viewer has a number of rendering options. The view-options
-  ;; preference group manages these.
-
-  (define view-options%
-    (class preferences-group%
-      (super-new [fraction 0.4])
-      (init-field notify)
-      
-      ; GUI sub-elements
-      
-      (define label (new message%       [parent this]
-                                        [label "View:"]))
-      (define group (new vertical-pane% [parent this]
-                                        [alignment '(left top)]))
-      (define grid  (new check-box%     [parent group]
-                                        [label "Show Grid"]
-                                        [callback (lambda x (notify))]))
-      (define res   (new check-box%     [parent group]
-                                        [label "Show Resolution"]
-                                        [callback (lambda x (notify))]))
-
-      ; Public interface
-
-      (define/public (get-grid) (send grid get-value))
-      (define/public (get-res)  (send res  get-value))))
-
-  ;;----------------------------------------------------------------------------
   ;; The lightprobe viewer has a few variables that tune the rendering. The
   ;; view-values group manages these, with the lightprobe canvas as observer.
 
@@ -266,36 +218,41 @@
       (init-field notify)
 
       (define width    300)
-      (define min-zoom -10)
+      (define min-zoom -20)
       (define max-zoom  50)
 
       ; GUI sub-elements
 
-      (define fill (new pane%   [parent this]))
-      (define expo (new slider% [parent this]
-                                [label "Exposure"]
-                                [init-value  100]
-                                [min-value     0]
-                                [max-value width]
-                                [min-width width]
-                                [stretchable-width #f]
-                                [style '(horizontal plain)]
-                                [callback (lambda x (notify))]))
-      (define zoom (new slider% [parent this]
-                                [label "Zoom"]
-                                [init-value  0]
-                                [min-value min-zoom]
-                                [max-value max-zoom]
-                                [min-width width]
-                                [stretchable-width #f]
-                                [style '(horizontal plain)]
-                                [callback (lambda x (notify))]))
+      (define expo (new slider%   [parent this]
+                                  [label "Exposure"]
+                                  [init-value  100]
+                                  [min-value     0]
+                                  [max-value width]
+                                  [min-width width]
+                                  [stretchable-width #f]
+                                  [style '(horizontal plain)]
+                                  [callback (lambda x (notify))]))
+      (define zoom (new slider%   [parent this]
+                                  [label "Zoom"]
+                                  [init-value  0]
+                                  [min-value min-zoom]
+                                  [max-value max-zoom]
+                                  [min-width width]
+                                  [stretchable-width #f]
+                                  [style '(horizontal plain)]
+                                  [callback (lambda x (notify))]))
+      (define all (new check-box% [parent this]
+                                  [label "Show All"]
+                                  [stretchable-width #t]
+                                  [callback (lambda x (notify))]))
 
       (define (value->expo v) (* 50.0 (/ v width)))
       (define (value->zoom v) (exp (/ v 10.0)))
       (define (zoom->value z) (* (log z) 10.0))
 
       ; Public interface
+
+      (define/public (all?) (send all get-value))
 
       (define/public (get-expo)
         (exact->inexact (value->expo (send expo get-value))))
@@ -474,7 +431,7 @@
       (init-field load-file)
       (init-field init-file)
       (init-field tilt-file)
-      (init-field set-mode)
+      (init-field notify)
 
       (define (get-shifted-shortcut-prefix)
         (cons 'shift (get-default-shortcut-prefix)))
@@ -591,29 +548,58 @@
       ;; -----------------------------------------------------------------------
       ;; View Menu
 
-      (let ((view (new menu% [parent this] [label "View"])))
+      (define view (new menu% [parent this] [label "View"]))
 
-        (new menu-item% [parent view]
-                        [label "Input Image"]
-                        [callback (lambda x (set-mode 0))]
-                        [shortcut #\i])
-        (new menu-item% [parent view]
-                        [label "Output Mapping"]
-                        [callback (lambda x (set-mode 1))]
-                        [shortcut #\m])
+      (define mode-t (new checkable-menu-item%
+                          [parent view]
+                          [label "Input Image"]
+                          [shortcut #\i]
+                          [checked #t]
+                          [callback (lambda x (set-mode #t))]))
+      (define mode-f (new checkable-menu-item%
+                          [parent view]
+                          [label "Output Mapping"]
+                          [shortcut #\m]
+                          [checked  #f]
+                          [callback (lambda x (set-mode #f))]))
 
-        (new separator-menu-item% [parent view]) ; -----------------------------
+      (new separator-menu-item% [parent view]) ; -------------------------------
 
-        (new menu-item% [parent view]
-                        [label "Image Pixels"]
-                        [callback (lambda x (set-mode 0))]
-                        [shortcut #\p])
-        (new menu-item% [parent view]
-                        [label "Image Resolution"]
-                        [callback (lambda x (set-mode 1))]
-                        [shortcut #\r]))
+      (define reso-f (new checkable-menu-item%
+                          [parent view]
+                          [label "Image Pixels"]
+                          [shortcut #\p]
+                          [checked #t]
+                          [callback (lambda x (set-reso #f))]))
+      (define reso-t (new checkable-menu-item%
+                          [parent view]
+                          [label "Image Resolution"]
+                          [shortcut #\r]
+                          [checked  #f]
+                          [callback (lambda x (set-reso #t))]))
 
-      ))
+      (new separator-menu-item% [parent view]) ; -------------------------------
+
+      (define grid-t (new checkable-menu-item%
+                          [parent view]
+                          [label "Output Grid"]
+                          [shortcut #\g]
+                          [checked  #f]
+                          [callback (lambda x (notify))]))
+        
+      (define (set-mode b)
+        (send mode-t check b)
+        (send mode-f check (not b))
+        (notify))
+
+      (define (set-reso b)
+        (send reso-t check b)
+        (send reso-f check (not b))
+        (notify))
+
+      (define/public (mode?) (send mode-t is-checked?))
+      (define/public (reso?) (send reso-t is-checked?))
+      (define/public (grid?) (send grid-t is-checked?))))
 
   ;;----------------------------------------------------------------------------
 
@@ -635,21 +621,20 @@
   ;;   Right ... View pan or rotate, depending on mode
   ;; S-Right ... View zoom
 
-  (define (get-click-op event mode)
+  (define (get-click-op event mode?)
     (let ((type    (send event get-event-type))
           (shift?  (send event get-shift-down))
-          (alt?    (send event get-alt-down))
-          (circle? (zero? mode)))
+          (alt?    (send event get-alt-down)))
 
       (case type
-        ((left-down)  (cond (alt?    'circle-size)
-                            (shift?  'sphere-roll)
-                            (circle? 'circle-move)
-                            (else    'sphere-rot)))
-        ((middle-down)               'circle-size)
-        ((right-down) (cond (shift?  'view-zoom)
-                            (circle? 'view-pan)
-                            (else    'view-rot)))
+        ((left-down)  (cond (alt?   'circle-size)
+                            (shift? 'sphere-roll)
+                            (mode?  'circle-move)
+                            (else   'sphere-rot)))
+        ((middle-down)              'circle-size)
+        ((right-down) (cond (shift? 'view-zoom)
+                            (mode?  'view-pan)
+                            (else   'view-rot)))
         (else #f))))
 
   ;; The lp-canvas handles all lightprobe rendering. As creator of the OpenGL
@@ -665,10 +650,11 @@
       (init-field set-zoom)
       (init-field get-zoom)
       (init-field get-expo)
-      (init-field get-mode)
       (init-field get-image)
-      (init-field get-grid)
-      (init-field get-res)
+      (init-field mode?)
+      (init-field grid?)
+      (init-field reso?)
+      (init-field all?)
 
       (super-new [style '(gl hscroll vscroll no-autoclear)])
 
@@ -694,13 +680,13 @@
 
       (define (get-w)
         (let ((ww (* 2 (send this get-width))))
-          (if (zero? (get-mode))
+          (if (mode?)
               (max 1  (round->exact (* (get-zoom) (lp-get-width  lightprobe))))
               (max ww (round->exact (* (get-zoom) ww))))))
 
       (define (get-h)
         (let ((hh (* 2 (send this get-height))))
-          (if (zero? (get-mode))
+          (if (mode?)
               (max 1  (round->exact (* (get-zoom) (lp-get-height lightprobe))))
               (max hh (round->exact (* (get-zoom) hh))))))
 
@@ -784,7 +770,7 @@
              (set! click-z        cz)
              (set! click-scroll-x sx)
              (set! click-scroll-y sy)
-             (set! click-op (get-click-op event (get-mode))))
+             (set! click-op (get-click-op event (mode?))))
 
             ((motion)
              (case click-op
@@ -853,12 +839,13 @@
               (h (send this get-height))
               (e (get-expo))
               (z (get-zoom))
-              (f (bitwise-ior (if (get-grid) lp-render-grid 0)
-                              (if (get-res)  lp-render-res  0))))
+              (f (bitwise-ior (if (grid?) lp-render-grid 0)
+                              (if (reso?) lp-render-res  0)
+                              (if (all?)  lp-render-all  0))))
 
-          (case (get-mode)
-            ((0) (lp-render-circle lightprobe f w h x y e z))
-            ((1) (lp-render-sphere lightprobe f w h x y e z)))
+          (if (mode?)
+            (lp-render-circle lightprobe f w h x y e z)
+            (lp-render-sphere lightprobe f w h x y e z))
 
           (with-gl-context (lambda () (swap-gl-buffers)))))
 
@@ -902,11 +889,8 @@
       (define bot (new horizontal-pane% [parent this] [stretchable-height #f]))
 
       (define img (new group-box-panel% [parent top]
-                                        [label "Images" ]
+                                        [label "Images"]
                                         [stretchable-width #t]))
-      (define opt (new group-box-panel% [parent top]
-                                        [label "Options"]
-                                        [stretchable-width #f]))
 
       ; GUI elements
 
@@ -917,36 +901,26 @@
              [load-file (lambda (path) (send images load-file path))]
              [init-file (lambda ()     (send images init-file))]
              [tilt-file (lambda ()     (send images tilt-file))]
-             [set-mode  (lambda (i) (begin (send mode   set-mode i)
-                                           (send canvas reshape)))]))
+             [notify    (lambda ()     (send canvas reshape))]))
 
       (define canvas
         (new lp-canvas%
              [parent mid]
              [min-width  800]
              [min-height 600]
-             [load-file   (lambda (path) (send images load-file path))]
-             [set-zoom    (lambda (z)    (send values  set-zoom z))]
-             [get-zoom    (lambda ()     (send values  get-zoom))]
-             [get-expo    (lambda ()     (send values  get-expo))]
-             [get-grid    (lambda ()     (send options get-grid))]
-             [get-mode    (lambda ()     (send mode    get-mode))]
-             [get-res     (lambda ()     (send options get-res))]
-             [get-image   (lambda ()     (send images  get-current))]))
+             [load-file (lambda (path) (send images load-file path))]
+             [set-zoom  (lambda (z)    (send values set-zoom z))]
+             [get-zoom  (lambda ()     (send values get-zoom))]
+             [get-expo  (lambda ()     (send values get-expo))]
+             [get-image (lambda ()     (send images get-current))]
+             [mode?     (lambda ()     (send menus  mode?))]
+             [reso?     (lambda ()     (send menus  reso?))]
+             [grid?     (lambda ()     (send menus  grid?))]
+             [all?      (lambda ()     (send values all?))]))
 
       (define images
         (new image-list%
              [parent img]
-             [notify (lambda () (send canvas reshape))]))
-
-      (define mode
-        (new view-mode%
-             [parent opt]
-             [notify (lambda () (send canvas reshape))]))
-
-      (define options
-        (new view-options%
-             [parent opt]
              [notify (lambda () (send canvas reshape))]))
 
       (define values
