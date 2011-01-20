@@ -6,9 +6,6 @@ varying vec3 T;
 uniform sampler2DRect image;
 uniform vec2          circle_p;
 uniform float         circle_r;
-uniform float         sphere_e;
-uniform float         sphere_a;
-uniform float         sphere_r;
 uniform float         exposure;
 
 /*----------------------------------------------------------------------------*/

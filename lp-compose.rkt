@@ -417,7 +417,13 @@
         (lp-tilt lightprobe)
         (notify))
 
-      ; Return the current image descriptor.
+      ; Access the current image descriptor.
+
+      (define/public (set-current i)
+        (if (< i (send images get-number))
+            (begin (send images select i)
+                   (notify))
+            (void)))
 
       (define/public (get-current)
         (index->descr (send images get-selection)))))
@@ -431,6 +437,7 @@
       (init-field load-file)
       (init-field init-file)
       (init-field tilt-file)
+      (init-field goto)
       (init-field notify)
 
       (define (get-shifted-shortcut-prefix)
@@ -587,6 +594,21 @@
                           [checked  #f]
                           [callback (lambda x (notify))]))
         
+      (new separator-menu-item% [parent view]) ; -------------------------------
+
+      (new menu-item% [parent view]
+                      [label "Image 1"]
+                      [shortcut #\1]
+                      [callback (lambda x (goto 0))])
+      (new menu-item% [parent view]
+                      [label "Image 2"]
+                      [shortcut #\2]
+                      [callback (lambda x (goto 1))])
+      (new menu-item% [parent view]
+                      [label "Image 3"]
+                      [shortcut #\3]
+                      [callback (lambda x (goto 2))])
+
       (define (set-mode b)
         (send mode-t check b)
         (send mode-f check (not b))
@@ -790,7 +812,7 @@
                 (refresh))
 
                ((sphere-roll)
-                (lp-set-sphere-roll      (+ (lp-get-sphere-roll)      dx))
+                (lp-set-sphere-roll      (+ (lp-get-sphere-roll)      dy))
                 (refresh))
 
                ((view-pan)
@@ -901,6 +923,7 @@
              [load-file (lambda (path) (send images load-file path))]
              [init-file (lambda ()     (send images init-file))]
              [tilt-file (lambda ()     (send images tilt-file))]
+             [goto      (lambda (i)    (send images set-current i))]
              [notify    (lambda ()     (send canvas reshape))]))
 
       (define canvas

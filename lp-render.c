@@ -119,6 +119,54 @@ static GLenum external_type(int b)
 }
 
 /*----------------------------------------------------------------------------*/
+/* WGL swap interval                                                          */
+
+#ifdef _WIN32
+
+#include <GL/wglext.h>
+
+static void sync(int interval)
+{
+    PFNWGLSWAPINTERVALEXTPROC _wglSwapInvervalEXT;
+
+    if ((_wglSwapInvervalEXT = (PFNWGLSWAPINTERVALEXTPROC)
+          wglGetProcAddress("wglSwapIntervalEXT")))
+         _wglSwapInvervalEXT(interval);
+}
+
+#endif
+
+/*----------------------------------------------------------------------------*/
+/* GLX swap interval                                                          */
+
+#ifdef __linux__
+
+static void sync(int interval)
+{
+    PFNGLXSWAPINTERVALSGIPROC _glXSwapInvervalSGI;
+
+    if ((_glXSwapInvervalSGI = (PFNGLXSWAPINTERVALSGIPROC)
+          glXGetProcAddress((const GLubyte *) "glXSwapIntervalSGI")))
+         _glXSwapInvervalSGI(interval);
+}
+
+#endif
+
+/*----------------------------------------------------------------------------*/
+/* CGL swap interval                                                          */
+
+#ifdef __APPLE__
+
+#include <OpenGL/OpenGL.h>
+
+static void sync(int interval)
+{
+    CGLSetParameter(CGLGetCurrentContext(), kCGLCPSwapInterval, &interval);
+}
+
+#endif
+
+/*----------------------------------------------------------------------------*/
 
 /* Load the contents of a TIFF image to a newly-allocated buffer.  Return the */
 /* buffer and its configuration.                                              */
@@ -614,6 +662,7 @@ lightprobe *lp_init()
     lightprobe *L = 0;
 
     glewInit();
+    sync(1);
 
     if ((L = (lightprobe *) calloc (1, sizeof (lightprobe))))
         gl_init(L);
@@ -888,16 +937,15 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
 static void transform_view(int w, int h, float x, float y, float z)
 {
-    const GLdouble H = 0.5 * w / h / z;
-    const GLdouble V = 0.5         / z;
+    const GLdouble H = 0.1 * w / h / z;
+    const GLdouble V = 0.1         / z;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glFrustum(-H, +H, -V, +V, 1, 10);
+    glFrustum(-H, +H, -V, +V, 0.1, 5.0);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    glTranslated(0.0, 0.0, -2.0);
     glRotated(180.0 * y -  90.0, 1.0, 0.0, 0.0);
     glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
 }
@@ -934,12 +982,18 @@ static float draw_sphere_image(GLuint vbo, GLuint ebo, GLsizei n,
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
 
     UNIFORM1I(p, "image",    0);
-    UNIFORM1F(p, "sphere_e", c->values[LP_SPHERE_ELEVATION]);
-    UNIFORM1F(p, "sphere_a", c->values[LP_SPHERE_AZIMUTH]);
-    UNIFORM1F(p, "sphere_r", c->values[LP_SPHERE_ROLL]);
     UNIFORM1F(p, "circle_r", c->values[LP_CIRCLE_RADIUS]);
     UNIFORM2F(p, "circle_p", c->values[LP_CIRCLE_X],
                              c->values[LP_CIRCLE_Y]);
+
+    glMatrixMode(GL_TEXTURE);
+    {
+        glLoadIdentity();
+        glRotatef(c->values[LP_SPHERE_ROLL],       0.0f, 0.0f, 1.0f);
+        glRotatef(c->values[LP_SPHERE_ELEVATION], -1.0f, 0.0f, 0.0f);
+        glRotatef(c->values[LP_SPHERE_AZIMUTH],    0.0f, 1.0f, 0.0f);
+    }
+    glMatrixMode(GL_MODELVIEW);
 
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
