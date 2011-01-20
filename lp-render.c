@@ -46,7 +46,6 @@ struct image
     GLuint texture;
     int    w;
     int    h;
-    int    flags;
     float  values[LP_MAX_VALUE];
 };
 
@@ -72,6 +71,7 @@ struct lightprobe
     GLuint  depth;
 
     image images[LP_MAX_IMAGE];
+    int   select;
 };
 
 /*----------------------------------------------------------------------------*/
@@ -685,14 +685,13 @@ int lp_add_image(lightprobe *L, const char *path)
         /* Find the lightprobe's first unused image slot. */
 
         for (i = 0; i < LP_MAX_IMAGE; i++)
-            if (L->images[i].flags == 0)
+            if (L->images[i].texture == 0)
             {
                 /* Store the texture. */
 
                 L->images[i].texture = o;
                 L->images[i].w       = w;
                 L->images[i].h       = h;
-                L->images[i].flags   = LP_FLAG_LOADED;
 
                 /* Set some default values. */
 
@@ -714,39 +713,69 @@ int lp_add_image(lightprobe *L, const char *path)
 
 void lp_del_image(lightprobe *L, int i)
 {
+    int j;
+
     assert(L);
     assert(0 <= i && i < LP_MAX_IMAGE);
 
     /* Release the image. */
 
-    if (L->images[i].flags & LP_FLAG_LOADED)
+    if (L->images[i].texture)
     {
         glDeleteTextures(1, &L->images[i].texture);
         memset(L->images + i, 0, sizeof (image));
     }
+
+    /* Select another image, if possible. */
+
+    if (L->select == i)
+        for (j = 0; j < LP_MAX_IMAGE; j++)
+            lp_sel_image(L, j);
+}
+
+void lp_sel_image(lightprobe *L, int i)
+{
+    assert(L);
+    assert(0 <= i && i < LP_MAX_IMAGE);
+
+    if (L->images[i].texture)
+        L->select = i;
 }
 
 /*----------------------------------------------------------------------------*/
 
-int lp_get_image_width(lightprobe *L, int i)
+int lp_get_width(lightprobe *L)
 {
     assert(L);
-    assert(0 <= i && i < LP_MAX_IMAGE);
-    return L->images[i].w;
+    return (L->images[L->select].texture) ? L->images[L->select].w : 0;
 }
 
-int lp_get_image_height(lightprobe *L, int i)
+int lp_get_height(lightprobe *L)
 {
     assert(L);
-    assert(0 <= i && i < LP_MAX_IMAGE);
-    return L->images[i].h;
+    return (L->images[L->select].texture) ? L->images[L->select].h : 0;
+}
+
+float lp_get_value(lightprobe *L, int k)
+{
+    assert(L);
+    assert(0 <= k && k < LP_MAX_VALUE);
+    return (L->images[L->select].texture) ? L->images[L->select].values[k] : 0;
+}
+
+void  lp_set_value(lightprobe *L, int k, float v)
+{
+    assert(L);
+    assert(0 <= k && k < LP_MAX_VALUE);
+    if (L->images[L->select].texture)
+        L->images[L->select].values[k] = v;
 }
 
 /*----------------------------------------------------------------------------*/
 
 /* The image bit field represents various togglable options. The following    */
 /* functions provide bit-wise operations for the manipulation of these.       */
-
+/*
 void lp_set_image_flags(lightprobe *L, int i, int f)
 {
     assert(L);
@@ -767,24 +796,7 @@ int  lp_get_image_flags(lightprobe *L, int i)
     assert(0 <= i && i < LP_MAX_IMAGE);
     return L->images[i].flags;
 }
-
-/*----------------------------------------------------------------------------*/
-
-void  lp_set_image_value(lightprobe *L, int i, int k, float v)
-{
-    assert(L);
-    assert(0 <= i && i < LP_MAX_IMAGE);
-    assert(0 <= k && k < LP_MAX_VALUE);
-    L->images[i].values[k] = v;
-}
-
-float lp_get_image_value(lightprobe *L, int i, int k)
-{
-    assert(L);
-    assert(0 <= i && i < LP_MAX_IMAGE);
-    assert(0 <= k && k < LP_MAX_VALUE);
-    return L->images[i].values[k];
-}
+*/
 
 /*----------------------------------------------------------------------------*/
 
@@ -825,7 +837,7 @@ static void draw_circle_setup(lightprobe *L, int w, int h, float e)
 /* position X Y.                                                              */
 
 static void draw_circle_image(image *c, GLuint p, int w, int h,
-                                float x, float y, float z)
+                              float x, float y, float z)
 {
     int X = -(c->w * z - w) * x;
     int Y = -(c->h * z - h) * y;
@@ -860,15 +872,13 @@ static void draw_circle_image(image *c, GLuint p, int w, int h,
 void lp_render_circle(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
-    int i;
-
     assert(L);
 
-    draw_circle_setup(L, w, h, e);
-
-    for (i = 0; i < LP_MAX_IMAGE; i++)
-        if (LP_MOVE(L->images[i].flags))
-            draw_circle_image(L->images + i, L->pro_circle, w, h, x, y, z);
+    if (L->images[L->select].texture)
+    {
+        draw_circle_setup(L, w, h, e);
+        draw_circle_image(L->images + L->select, L->pro_circle, w, h, x, y, z);
+    }
 }
 
 /*----------------------------------------------------------------------------*/
@@ -995,17 +1005,23 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
         init_frame(L->frame, L->color, L->depth, L->w, L->h);
     }
 
-    /* Render all images to the accumulation buffer. */
+    /* Render any/all images to the accumulation buffer. */
 
     glBindFramebuffer(GL_FRAMEBUFFER, L->frame);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     transform_view(w, h, x, y, z);
 
-    for (i = 0; i < LP_MAX_IMAGE; i++)
-        if (LP_DRAW(L->images[i].flags))
-            draw_sphere_image(L->vbo_sphere, L->ebo_sphere, L->num_sphere,
-                              L->images + i, acc);
+    if (f & LP_RENDER_ALL)
+    {
+        for (i = 0; i < LP_MAX_IMAGE; i++)
+            if (L->images[i].texture)
+                draw_sphere_image(L->vbo_sphere, L->ebo_sphere, L->num_sphere,
+                                  L->images + i, acc);
+    }
+    else
+        draw_sphere_image(L->vbo_sphere, L->ebo_sphere, L->num_sphere,
+                          L->images + L->select, acc);
 
     /* Map the accumulation buffer to the screen. */
 

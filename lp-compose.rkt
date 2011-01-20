@@ -67,44 +67,32 @@
     (gl-ffi "lp_free" (_fun _pointer -> _void)))
 
   ;;----------------------------------------------------------------------------
-  ;; Image instantiation
+  ;; Image instancing, selection, and query
 
-  (define lp-add-image
-    (gl-ffi "lp_add_image" (_fun _pointer _path -> _int)))
-  (define lp-del-image
-    (gl-ffi "lp_del_image" (_fun _pointer _int  -> _void)))
+  (define lp-add-image  (gl-ffi "lp_add_image"  (_fun _pointer _path -> _int)))
+  (define lp-del-image  (gl-ffi "lp_del_image"  (_fun _pointer _int  -> _void)))
+  (define lp-sel-image  (lp-ffi "lp_sel_image"  (_fun _pointer _int  -> _void)))
 
-  (define lp-get-image-width
-    (lp-ffi "lp_get_image_width"  (_fun _pointer _int -> _int)))
-  (define lp-get-image-height
-    (lp-ffi "lp_get_image_height" (_fun _pointer _int -> _int)))
-
-  ;;----------------------------------------------------------------------------
-  ;; Raw image flag accessors
-
-  (define lp-set-image-flags
-    (lp-ffi "lp_set_image_flags" (_fun _pointer _int _int -> _void)))
-  (define lp-clr-image-flags
-    (lp-ffi "lp_clr_image_flags" (_fun _pointer _int _int -> _void)))
-  (define lp-get-image-flags
-    (lp-ffi "lp_get_image_flags" (_fun _pointer _int      -> _int)))
+  (define lp-get-width  (lp-ffi "lp_get_width"  (_fun _pointer -> _int)))
+  (define lp-get-height (lp-ffi "lp_get_height" (_fun _pointer -> _int)))
 
   ;;----------------------------------------------------------------------------
   ;; Raw image value accessors
 
-  (define lp-set-image-value
-    (lp-ffi "lp_set_image_value" (_fun _pointer _int _int _float -> _void)))
-  (define lp-get-image-value
-    (lp-ffi "lp_get_image_value" (_fun _pointer _int _int        -> _float)))
+  (define lp-set-value
+    (lp-ffi "lp_set_value" (_fun _pointer _int _float -> _void)))
+  (define lp-get-value
+    (lp-ffi "lp_get_value" (_fun _pointer _int        -> _float)))
 
   ;;----------------------------------------------------------------------------
   ;; Rendering
 
   (define lp-render-grid 1)
   (define lp-render-res  2)
+  (define lp-render-all  4)
 
   (define lp-render-circle
-    (gl-ffi "lp_render_circle" 
+    (gl-ffi "lp_render_circle"
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
   (define lp-render-sphere
     (gl-ffi "lp_render_sphere" 
@@ -121,38 +109,25 @@
     (gl-ffi "lp_export_sphere" (_fun _pointer _path -> _bool)))
 
   ;;----------------------------------------------------------------------------
-  ;; Image flag accessors
-
-  (define (lp-is-image? d b)
-    (and (not (negative? d))
-         (not (zero? (bitwise-and b (lp-get-image-flags lightprobe d))))))
-
-  (define (lp-is-image-loaded? d) (lp-is-image? d 1))
-  (define (lp-is-image-active? d) (lp-is-image? d 2))
-  (define (lp-is-image-hidden? d) (lp-is-image? d 4))
-
-  (define (lp-is-image-visible? d) (not (lp-is-image-hidden? d)))
-
-  ;;----------------------------------------------------------------------------
   ;; Image value accessors
 
-  (define (lp-set-value d k v) (lp-set-image-value lightprobe d k v))
-  (define (lp-get-value d k)   (lp-get-image-value lightprobe d k))
+  (define (lp-set-circle-x         v) (lp-set-value lightprobe 0 v))
+  (define (lp-set-circle-y         v) (lp-set-value lightprobe 1 v))
+  (define (lp-set-circle-radius    v) (lp-set-value lightprobe 2 v))
+  (define (lp-set-sphere-elevation v) (lp-set-value lightprobe 3 v))
+  (define (lp-set-sphere-azimuth   v) (lp-set-value lightprobe 4 v))
+  (define (lp-set-sphere-roll      v) (lp-set-value lightprobe 5 v))
 
-  (define (lp-set-circle-x         d v) (lp-set-value d 0 v))
-  (define (lp-get-circle-x         d)   (lp-get-value d 0))
-  (define (lp-set-circle-y         d v) (lp-set-value d 1 v))
-  (define (lp-get-circle-y         d)   (lp-get-value d 1))
-  (define (lp-set-circle-radius    d v) (lp-set-value d 2 v))
-  (define (lp-get-circle-radius    d)   (lp-get-value d 2))
-  (define (lp-set-sphere-elevation d v) (lp-set-value d 3 v))
-  (define (lp-get-sphere-elevation d)   (lp-get-value d 3))
-  (define (lp-set-sphere-azimuth   d v) (lp-set-value d 4 v))
-  (define (lp-get-sphere-azimuth   d)   (lp-get-value d 4))
-  (define (lp-set-sphere-roll      d v) (lp-set-value d 5 v))
-  (define (lp-get-sphere-roll      d)   (lp-get-value d 5))
+  (define (lp-get-circle-x)           (lp-get-value lightprobe 0))
+  (define (lp-get-circle-y)           (lp-get-value lightprobe 1))
+  (define (lp-get-circle-radius)      (lp-get-value lightprobe 2))
+  (define (lp-get-sphere-elevation)   (lp-get-value lightprobe 3))
+  (define (lp-get-sphere-azimuth)     (lp-get-value lightprobe 4))
+  (define (lp-get-sphere-roll)        (lp-get-value lightprobe 5))
 
   ;;----------------------------------------------------------------------------
+  ;; Return the exact integer closest to the given value. This function really
+  ;; should be in the standard library.
 
   (define (round->exact x) (inexact->exact (round x)))
 
@@ -291,7 +266,7 @@
       (init-field notify)
 
       (define width    300)
-      (define min-zoom -20)
+      (define min-zoom -10)
       (define max-zoom  50)
 
       ; GUI sub-elements
@@ -352,47 +327,36 @@
       
       ; The "descr" is the image's lightprobe API descriptor.
     
-      (define (index->descr i) (send images get-data i))
+      (define (index->descr i) (if i (send images get-data i) #f))
 
       (define (get-descrs) (map index->descr (get-indices)))
       (define (get-descr s)    (index->descr (get-index s)))
 
       ; Interaction callbacks
 
-      (define (do-add  control event)
+      (define (do-add control event)
         (map (lambda (p)
                (send this add-image p))
              (or (get-file-list) '()))
         (notify))
 
-      (define (do-del  control event)
-        (map (lambda (i)
-               (send this del-image i))
-             (send images get-selections))
-        (notify))
+      (define (do-del control event)
+        (let ((i (send images get-selection)))
+          (if i
+              (begin
+                (send this del-image i)
+                (notify))
+              (void))))
 
-      (define (do-hide control event)
-        (map (lambda (i)
-               (lp-set-image-flags lightprobe (index->descr i) 4))
-             (send images get-selections))
-        (notify))
+      (define (do-sel control event)
+        (let ((i (send images get-selection)))
+          (if i
+              (begin
+                (lp-sel-image lightprobe (index->descr i))
+                (notify))
+              (void))))
 
-      (define (do-show control event)
-        (map (lambda (i)
-               (lp-clr-image-flags lightprobe (index->descr i) 4))
-             (send images get-selections))
-        (notify))
-
-      ; Set the 'active' flag on all images based on selection status.
-
-      (define (set control event)
-        (map (lambda (i)
-               (let ((d (index->descr i)))
-                 (if (send images is-selected? i)
-                     (lp-set-image-flags lightprobe d 2)
-                     (lp-clr-image-flags lightprobe d 2))))
-             (get-indices))
-        (notify))
+      (define (do-cnt control event) (void))
 
       ; GUI sub-elements
 
@@ -401,31 +365,28 @@
       (define images  (new list-box%      [parent this]
                                           [label #f]
                                           [choices '()]
-                                          [callback set]
-                                          [style '(multiple)]))
+                                          [callback do-sel]))
 
-      (define add  (instantiate packed-button% ("Add"    buttons do-add)))
-      (define rem  (instantiate packed-button% ("Remove" buttons do-del)))
-      (define hide (instantiate packed-button% ("Hide"   buttons do-hide)))
-      (define show (instantiate packed-button% ("Show"   buttons do-show)))
+      (define add (instantiate packed-button% ("Add"    buttons do-add)))
+      (define rem (instantiate packed-button% ("Remove" buttons do-del)))
+      (define cnt (instantiate packed-button% ("Center" buttons do-cnt)))
 
       ; Add (load) the named image.
 
       (define/public (add-image path)
         (let ((d (lp-add-image lightprobe path)))
+          (lp-sel-image lightprobe d)
+          (send images append (path->string path) d)
+          (send images select (- (send images get-number) 1))
+          (notify)
+          d))
 
-          (if (lp-is-image-loaded? d)
-              (begin (send images append (path->string path) d)
-                     (notify)
-                     d)
-              #f)))
-
-      ; Remove (unload) the named image.
+      ; Remove (unload) the indexed image.
 
       (define/public (del-image i)
         (let ((d (index->descr i)))
-          (begin (lp-del-image lightprobe d)
-                 (send images delete      i))
+          (lp-del-image lightprobe d)
+          (send images delete      i)
           (notify)))
 
       ; Write the current image state to the named file.
@@ -436,19 +397,20 @@
                  (let* ((d (send images get-data   i))
                         (s (send images get-string i)))
 
-                   (printf "~s ~s ~s ~s ~s ~s ~s ~s~n"
-                           (lp-get-image-flags lightprobe d)
-                           (lp-get-circle-x         d)
-                           (lp-get-circle-y         d)
-                           (lp-get-circle-radius    d)
-                           (lp-get-sphere-elevation d)
-                           (lp-get-sphere-azimuth   d)
-                           (lp-get-sphere-roll      d) s)))))
+                   (lp-sel-image lightprobe d)
+                   (printf "~s ~s ~s ~s ~s ~s ~s~n"
+                           (lp-get-circle-x)
+                           (lp-get-circle-y)
+                           (lp-get-circle-radius)
+                           (lp-get-sphere-elevation)
+                           (lp-get-sphere-azimuth)
+                           (lp-get-sphere-roll) s)))))
 
           (with-output-to-file path
             (lambda () (map write-image (get-indices)))
             #:mode 'text #:exists 'replace))
 
+        (do-sel #f #f)
         (send root set-label (path->string path)))
 
       ; Load the named file to the current image state.
@@ -456,7 +418,6 @@
       (define/public (load-file path)
         (let ((parse-image (lambda (line)
                              (let* ((in (open-input-string line))
-                                    (fl (read in))
                                     (cx (read in))
                                     (cy (read in))
                                     (cr (read in))
@@ -467,13 +428,12 @@
                                     (d (add-image (string->path nm))))
 
                                (if d (begin
-                                       (lp-set-image-flags lightprobe d fl)
-                                       (lp-set-circle-x         d cx)
-                                       (lp-set-circle-y         d cy)
-                                       (lp-set-circle-radius    d cr)
-                                       (lp-set-sphere-elevation d se)
-                                       (lp-set-sphere-azimuth   d se)
-                                       (lp-set-sphere-roll      d se))
+                                       (lp-set-circle-x         cx)
+                                       (lp-set-circle-y         cy)
+                                       (lp-set-circle-radius    cr)
+                                       (lp-set-sphere-elevation se)
+                                       (lp-set-sphere-azimuth   se)
+                                       (lp-set-sphere-roll      se))
                                    (void))))))
 
           (let loop ((in (open-input-file path)))
@@ -500,12 +460,10 @@
         (lp-tilt lightprobe)
         (notify))
 
-      ; Return a list of image path strings.
+      ; Return the current image descriptor.
 
-      (define/public (get-active-descrs)
-        (filter lp-is-image-active?  (get-descrs)))
-      (define/public (get-visible-descrs)
-        (filter lp-is-image-visible? (get-descrs)))))
+      (define/public (get-current)
+        (index->descr (send images get-selection)))))
 
   ;;----------------------------------------------------------------------------
 
@@ -659,6 +617,41 @@
 
   ;;----------------------------------------------------------------------------
 
+  ;; Canvas mouse event interpretation is complicated by a number of issues.
+  ;; First and foremost it provides a fluid interaction for the power user,
+  ;; replicating some of the on-screen GUI elements. However, it must do so
+  ;; on a variety of platforms, but the Control modifier invokes right click
+  ;; in OSX and the Alt modifier invokes a window manager operation in Gnome.
+  ;; Option is "alt" under OSX, but Alt is "meta" under Linux and Windows.
+  ;;
+  ;; The following configuration attempts to work around this compatibility
+  ;; minefield through careful mapping and the use of Option to simulate middle
+  ;; click under OSX.
+  ;;
+  ;;   Left  ... Circle move or Sphere rotate, depending on mode.
+  ;; S-Left  ... Sphere roll
+  ;; A-Left  ... Circle size (OSX)
+  ;;  Middle ... Circle size (Linux / Win)
+  ;;   Right ... View pan or rotate, depending on mode
+  ;; S-Right ... View zoom
+
+  (define (get-click-op event mode)
+    (let ((type    (send event get-event-type))
+          (shift?  (send event get-shift-down))
+          (alt?    (send event get-alt-down))
+          (circle? (zero? mode)))
+
+      (case type
+        ((left-down)  (cond (alt?    'circle-size)
+                            (shift?  'sphere-roll)
+                            (circle? 'circle-move)
+                            (else    'sphere-rot)))
+        ((middle-down)               'circle-size)
+        ((right-down) (cond (shift?  'view-zoom)
+                            (circle? 'view-pan)
+                            (else    'view-rot)))
+        (else #f))))
+
   ;; The lp-canvas handles all lightprobe rendering. As creator of the OpenGL
   ;; context, it directs the startup and initialization of all lightprobe
   ;; resources. It receives a number of thunks for use in marshalling rendering
@@ -673,8 +666,7 @@
       (init-field get-zoom)
       (init-field get-expo)
       (init-field get-mode)
-      (init-field get-visible)
-      (init-field get-active)
+      (init-field get-image)
       (init-field get-grid)
       (init-field get-res)
 
@@ -698,23 +690,19 @@
               (exact->inexact (/ y h))
               0.0)))
 
-      ;; The virtual size of the canvas contents is defined to be the size
-      ;; of the largest currently-visible image times the zoom factor, or
-      ;; one if there are no visible images.
+      ;; Compute the virtual scene size for the given mode and zoom.
 
-      (define (get-contents-w)
-        (let* ((ws (map (lambda (d)
-                          (lp-get-image-width lightprobe d)) (get-visible))))
-          (if (null? ws)
-              1
-              (round->exact (* (get-zoom) (apply max ws))))))
+      (define (get-w)
+        (let ((ww (* 2 (send this get-width))))
+          (if (zero? (get-mode))
+              (max 1  (round->exact (* (get-zoom) (lp-get-width  lightprobe))))
+              (max ww (round->exact (* (get-zoom) ww))))))
 
-      (define (get-contents-h)
-        (let* ((hs (map (lambda (d)
-                          (lp-get-image-height lightprobe d)) (get-visible))))
-          (if (null? hs)
-              1
-              (round->exact (* (get-zoom) (apply max hs))))))
+      (define (get-h)
+        (let ((hh (* 2 (send this get-height))))
+          (if (zero? (get-mode))
+              (max 1  (round->exact (* (get-zoom) (lp-get-height lightprobe))))
+              (max hh (round->exact (* (get-zoom) hh))))))
 
       ;; The center of the image should not move during zooming.  Thus, the
       ;; pan must be adjusted as image and zoom parameters change.  To make
@@ -725,8 +713,8 @@
       (define center-y 0.5)
 
       (define (recenter)
-        (let* ((iw (get-contents-w))
-               (ih (get-contents-h))
+        (let* ((iw (get-w))
+               (ih (get-h))
                (ww (send this get-width))
                (wh (send this get-height))
                (sx (send this get-scroll-pos 'horizontal))
@@ -743,8 +731,8 @@
       ; With this done, cache the image center and trigger a re-paint.
 
       (define/public (reshape)
-        (let* ((iw (get-contents-w))
-               (ih (get-contents-h))
+        (let* ((iw (get-w))
+               (ih (get-h))
                (ww (send this get-width))
                (wh (send this get-height))
 
@@ -788,7 +776,7 @@
 
           (case type
 
-            ((right-down left-down)
+            ((left-down middle-down right-down)
              (set! click-x        cx)
              (set! click-y        cy)
              (set! last-x         cx)
@@ -796,46 +784,48 @@
              (set! click-z        cz)
              (set! click-scroll-x sx)
              (set! click-scroll-y sy)
-             (set! click-op (case type
-                              (( left-down) (if shift? 'size 'move))
-                              ((right-down) (if shift? 'zoom 'pan)))))
+             (set! click-op (get-click-op event (get-mode))))
 
             ((motion)
              (case click-op
 
-               ;; Left-click drag = move
-
-               ((move)
-                (map (lambda (d)
-                       (lp-set-circle-x d (+ (lp-get-circle-x d) dx))
-                       (lp-set-circle-y d (+ (lp-get-circle-y d) dy)))
-                     (get-active))
+               ((circle-move)
+                (lp-set-circle-x         (+ (lp-get-circle-x)         dx))
+                (lp-set-circle-y         (+ (lp-get-circle-y)         dy))
                 (refresh))
 
-               ;; Left-click shift-drag = size
-
-               ((size)
-                (map (lambda (d)
-                       (lp-set-circle-radius d (- (lp-get-circle-radius d) dy)))
-                     (get-active))
-                  (refresh))
+               ((circle-size)
+                (lp-set-circle-radius    (- (lp-get-circle-radius)    dy))
+                (refresh))
             
-               ;; Right-click drag = pan
+               ((sphere-rot)
+                (lp-set-sphere-azimuth   (+ (lp-get-sphere-azimuth)   dx))
+                (lp-set-sphere-elevation (+ (lp-get-sphere-elevation) dy))
+                (refresh))
 
-               ((pan)
+               ((sphere-roll)
+                (lp-set-sphere-roll      (+ (lp-get-sphere-roll)      dx))
+                (refresh))
+
+               ((view-pan)
                 (let* ((nx (+ click-scroll-x (- click-x cx)))
-                       (ny (+ click-scroll-y (- click-y cy)))
-                       (nw (send this get-scroll-range 'horizontal))
-                       (nh (send this get-scroll-range 'vertical)))
-
+                       (ny (+ click-scroll-y (- click-y cy))))
                   (send this set-scroll-pos 'horizontal nx)
                   (send this set-scroll-pos 'vertical   ny)
                   (recenter)
                   (reshape)))
 
-               ;; Right-click shift-drag = zoom
+               ((view-rot)
+                (let* ((nw (send this get-scroll-range 'horizontal))
+                       (nx (+ click-scroll-x (- click-x cx)))
+                       (ny (+ click-scroll-y (- click-y cy)))
+                       (xx (round->exact (modulo nx nw))))
+                  (send this set-scroll-pos 'horizontal xx)
+                  (send this set-scroll-pos 'vertical   ny)
+                  (recenter)
+                  (reshape)))
 
-               ((zoom)
+               ((view-zoom)
                 (set-zoom (max 0.1 (+ click-z (/ (- click-y cy) 50))))
                 (reshape))
 
@@ -928,13 +918,13 @@
              [init-file (lambda ()     (send images init-file))]
              [tilt-file (lambda ()     (send images tilt-file))]
              [set-mode  (lambda (i) (begin (send mode   set-mode i)
-                                           (send canvas refresh)))]))
+                                           (send canvas reshape)))]))
 
       (define canvas
         (new lp-canvas%
              [parent mid]
-             [min-width  640]
-             [min-height 480]
+             [min-width  800]
+             [min-height 600]
              [load-file   (lambda (path) (send images load-file path))]
              [set-zoom    (lambda (z)    (send values  set-zoom z))]
              [get-zoom    (lambda ()     (send values  get-zoom))]
@@ -942,8 +932,7 @@
              [get-grid    (lambda ()     (send options get-grid))]
              [get-mode    (lambda ()     (send mode    get-mode))]
              [get-res     (lambda ()     (send options get-res))]
-             [get-visible (lambda ()     (send images  get-visible-descrs))]
-             [get-active  (lambda ()     (send images  get-active-descrs))]))
+             [get-image   (lambda ()     (send images  get-current))]))
 
       (define images
         (new image-list%

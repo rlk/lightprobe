@@ -27,12 +27,10 @@ void        lp_free(lightprobe *lp);
 
 int  lp_add_image(lightprobe *lp, const char *path);
 void lp_del_image(lightprobe *lp, int);
-
-int  lp_get_image_width (lightprobe *lp, int i);
-int  lp_get_image_height(lightprobe *lp, int i);
+void lp_sel_image(lightprobe *lp, int);
 
 /*----------------------------------------------------------------------------*/
-
+/*
 enum
 {
     LP_FLAG_LOADED = 1,
@@ -46,7 +44,7 @@ int  lp_get_image_flags(lightprobe *lp, int i);
 
 #define LP_MOVE(f) (((f & LP_FLAG_LOADED) != 0) && ((f & LP_FLAG_ACTIVE) != 0))
 #define LP_DRAW(f) (((f & LP_FLAG_LOADED) != 0) && ((f & LP_FLAG_HIDDEN) == 0))
-
+*/
 /*----------------------------------------------------------------------------*/
 
 enum
@@ -60,15 +58,18 @@ enum
     LP_MAX_VALUE
 };
 
-void  lp_set_image_value(lightprobe *lp, int i, int k, float v);
-float lp_get_image_value(lightprobe *lp, int i, int k);
+int   lp_get_width (lightprobe *lp);
+int   lp_get_height(lightprobe *lp);
+float lp_get_value (lightprobe *lp, int k);
+void  lp_set_value (lightprobe *lp, int k, float v);
 
 /*----------------------------------------------------------------------------*/
 
 enum
 {
     LP_RENDER_GRID = 1,
-    LP_RENDER_RES  = 2
+    LP_RENDER_RES  = 2,
+    LP_RENDER_ALL  = 4
 };
 
 void lp_render_circle(lightprobe *lp, int f, int w, int h,

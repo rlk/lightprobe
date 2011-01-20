@@ -28,7 +28,7 @@ vec2 unwrap(vec3 n)
 void main()
 {
     vec3 n = normalize(N);
-    vec3 t = normalize(T);
+//  vec3 t = normalize(T);
 
     vec2 p = unwrap(n);
 
