@@ -39,6 +39,9 @@
 
 #define LP_MAX_IMAGE 8
 
+#define SPH_R 32
+#define SPH_C 64
+
 /*----------------------------------------------------------------------------*/
 
 struct image
@@ -59,10 +62,10 @@ struct lightprobe
     GLuint  pro_sphere_res_acc;
     GLuint  pro_sphere_res_fin;
 
-    GLuint  vbo_sphere;
-    GLuint  ebo_sphere;
+    GLuint  vb_sphere;
+    GLuint  qb_sphere;
+    GLuint  lb_sphere;
 
-    GLsizei num_sphere;
     GLsizei w;
     GLsizei h;
 
@@ -520,73 +523,97 @@ void init_frame(GLuint frame, GLuint color, GLuint depth, GLsizei w, GLsizei h)
 /* vector for each vertex, noting that position is trivially derived from     */
 /* normal.                                                                    */
 
-static GLsizei make_sphere(GLuint vbo, GLuint ebo)
+static void make_sphere(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
 {
-    const GLsizei r = 32;
-    const GLsizei c = 64;
+    GLfloat *v = 0;
+    GLshort *q = 0;
+    GLshort *l = 0;
 
     GLsizei i;
     GLsizei j;
-    GLsizei k;
 
-    GLfloat *v = 0;
-    GLshort *e = 0;
+    /* Compute the buffer sizes. */
 
-    /* Set the buffer sizes. */
-
-    const GLsizei vsize = 6 * sizeof (GLfloat) * (r + 1) * (c + 1);
-    const GLsizei esize = 4 * sizeof (GLshort) * (r    ) * (c    );
-
-    glBindBuffer(GL_ARRAY_BUFFER,         vbo);
-    glBufferData(GL_ARRAY_BUFFER,         vsize, 0, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, esize, 0, GL_STATIC_DRAW);
+    const GLsizei vn = 6 * sizeof (GLfloat) * (r + 1) * (c + 1);
+    const GLsizei qn = 4 * sizeof (GLshort) * (    r * c);
+    const GLsizei ln = 2 * sizeof (GLshort) * (4 * r + c);
 
     /* Compute the vertex normal and tangent. */
 
-    if ((v = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)))
+    glBindBuffer(GL_ARRAY_BUFFER, vb);
+    glBufferData(GL_ARRAY_BUFFER, vn, 0, GL_STATIC_DRAW);
 
-        for (k = 0, i = 0; i <= r; i++)
-            for    (j = 0; j <= c; j++, k++)
+    if ((v = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)))
+    {
+        for     (i = 0; i <= r; i++)
+            for (j = 0; j <= c; j++)
             {
                 const double p = (      M_PI * i) / r - M_PI_2;
                 const double t = (2.0 * M_PI * j) / c - M_PI;
 
-                v[k * 6 + 0] =  (GLfloat) (sin(t) * cos(p));
-                v[k * 6 + 1] =  (GLfloat) (         sin(p));
-                v[k * 6 + 2] =  (GLfloat) (cos(t) * cos(p));
+                *v++ =  (GLfloat) (sin(t) * cos(p));
+                *v++ =  (GLfloat) (         sin(p));
+                *v++ =  (GLfloat) (cos(t) * cos(p));
 
-                v[k * 6 + 3] =  (GLfloat) cos(t);
-                v[k * 6 + 4] =  (GLfloat)   0.0f;
-                v[k * 6 + 5] = -(GLfloat) sin(t);
+                *v++ =  (GLfloat) cos(t);
+                *v++ =  (GLfloat)   0.0f;
+                *v++ = -(GLfloat) sin(t);
             }
+        glUnmapBuffer(GL_ARRAY_BUFFER);
+    }
 
     /* Compute the face indices. */
 
-    if ((e = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY)))
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, qb);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, qn, 0, GL_STATIC_DRAW);
 
-        for (k = 0, i = 0; i <  r; i++)
-            for    (j = 0; j <  c; j++, k++)
+    if ((q = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY)))
+    {
+        for     (i = 0; i <  r; i++)
+            for (j = 0; j <  c; j++)
             {
-                e[k * 4 + 0] = (GLushort) ((i    ) * (c + 1) + (j    ));
-                e[k * 4 + 1] = (GLushort) ((i + 1) * (c + 1) + (j    ));
-                e[k * 4 + 2] = (GLushort) ((i + 1) * (c + 1) + (j + 1));
-                e[k * 4 + 3] = (GLushort) ((i    ) * (c + 1) + (j + 1));
+                *q++ = (GLushort) ((i    ) * (c + 1) + (j    ));
+                *q++ = (GLushort) ((i + 1) * (c + 1) + (j    ));
+                *q++ = (GLushort) ((i + 1) * (c + 1) + (j + 1));
+                *q++ = (GLushort) ((i    ) * (c + 1) + (j + 1));
             }
+        glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
+    }
 
-    /* Unmap and return the number of generated elements. */
+    /* Compute the line indices. */
 
-    glUnmapBuffer(GL_ARRAY_BUFFER);
-    glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lb);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, ln, 0, GL_STATIC_DRAW);
 
-    return r * c * 4;
+    if ((l = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY)))
+    {
+        const int j2 = c / 2;
+        const int j4 = c / 4;
+
+        for (j = 0; j < c; j++)
+        {
+            *l++ = (GLushort) ((r / 2) * (c + 1) + (j    ));
+            *l++ = (GLushort) ((r / 2) * (c + 1) + (j + 1));
+        }
+        for (i = 0; i < r; i++)
+        {
+            *l++ = (GLushort) ((i    ) * (c + 1)          );
+            *l++ = (GLushort) ((i + 1) * (c + 1)          );
+            *l++ = (GLushort) ((i    ) * (c + 1)      + j4);
+            *l++ = (GLushort) ((i + 1) * (c + 1)      + j4);
+            *l++ = (GLushort) ((i    ) * (c + 1) + j2     );
+            *l++ = (GLushort) ((i + 1) * (c + 1) + j2     );
+            *l++ = (GLushort) ((i    ) * (c + 1) + j2 + j4);
+            *l++ = (GLushort) ((i + 1) * (c + 1) + j2 + j4);
+        }
+        glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
+    }
 }
 
 /* Render the sphere defined by the previous function. Pass the normal and    */
 /* tangent vectors along using the position and normal vertex attributes.     */
 
-static void draw_sphere(GLuint vbo, GLuint ebo, GLsizei n)
+static void draw_object(GLenum mode, GLuint vbo, GLuint ebo, GLsizei n)
 {
     size_t s = 3 * sizeof (GLfloat);
 
@@ -599,7 +626,7 @@ static void draw_sphere(GLuint vbo, GLuint ebo, GLsizei n)
             glVertexPointer(3, GL_FLOAT, 2 * s, (const GLvoid *) 0);
             glNormalPointer(   GL_FLOAT, 2 * s, (const GLvoid *) s);
 
-            glDrawElements(GL_QUADS, n, GL_UNSIGNED_SHORT, 0);
+            glDrawElements(mode, n, GL_UNSIGNED_SHORT, 0);
         }
         glDisableClientState(GL_NORMAL_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
@@ -628,16 +655,18 @@ static void gl_init(lightprobe *L)
 
     /* Generate and initialize vertex buffer objects. */
 
-    glGenBuffers(1, &L->vbo_sphere);
-    glGenBuffers(1, &L->ebo_sphere);
+    glGenBuffers(1, &L->vb_sphere);
+    glGenBuffers(1, &L->qb_sphere);
+    glGenBuffers(1, &L->lb_sphere);
 
-    L->num_sphere = make_sphere(L->vbo_sphere, L->ebo_sphere);
+    make_sphere(L->vb_sphere, L->qb_sphere, L->lb_sphere, SPH_R, SPH_C);
 }
 
 static void gl_free(lightprobe *L)
 {
-    glDeleteBuffers(1, &L->vbo_sphere);
-    glDeleteBuffers(1, &L->ebo_sphere);
+    glDeleteBuffers(1, &L->vb_sphere);
+    glDeleteBuffers(1, &L->qb_sphere);
+    glDeleteBuffers(1, &L->lb_sphere);
 
     free_program(L->pro_circle);
     free_program(L->pro_sphere_dat_acc);
@@ -822,33 +851,6 @@ void  lp_set_value(lightprobe *L, int k, float v)
 
 /*----------------------------------------------------------------------------*/
 
-/* The image bit field represents various togglable options. The following    */
-/* functions provide bit-wise operations for the manipulation of these.       */
-/*
-void lp_set_image_flags(lightprobe *L, int i, int f)
-{
-    assert(L);
-    assert(0 <= i && i < LP_MAX_IMAGE);
-    L->images[i].flags |=  f;
-}
-
-void lp_clr_image_flags(lightprobe *L, int i, int f)
-{
-    assert(L);
-    assert(0 <= i && i < LP_MAX_IMAGE);
-    L->images[i].flags &= ~f;
-}
-
-int  lp_get_image_flags(lightprobe *L, int i)
-{
-    assert(L);
-    assert(0 <= i && i < LP_MAX_IMAGE);
-    return L->images[i].flags;
-}
-*/
-
-/*----------------------------------------------------------------------------*/
-
 /* Set up circle rendering to a viewport of width W and height H. Set the     */
 /* uniform values for exposure E.                                             */
 
@@ -974,24 +976,26 @@ static void transform_sphere(int s)
 #endif
 /*----------------------------------------------------------------------------*/
 
-static float draw_sphere_image(GLuint vbo, GLuint ebo, GLsizei n,
-                              image *c, GLuint p)
+static float draw_sphere_image(GLuint vb, GLuint qb,
+                               GLsizei r, GLsizei c,
+                               GLuint  p, GLfloat s, image *t)
 {
     glUseProgram(p);
 
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, t->texture);
 
     UNIFORM1I(p, "image",    0);
-    UNIFORM1F(p, "circle_r", c->values[LP_CIRCLE_RADIUS]);
-    UNIFORM2F(p, "circle_p", c->values[LP_CIRCLE_X],
-                             c->values[LP_CIRCLE_Y]);
+    UNIFORM1F(p, "saturate", s);
+    UNIFORM1F(p, "circle_r", t->values[LP_CIRCLE_RADIUS]);
+    UNIFORM2F(p, "circle_p", t->values[LP_CIRCLE_X],
+                             t->values[LP_CIRCLE_Y]);
 
     glMatrixMode(GL_TEXTURE);
     {
         glLoadIdentity();
-        glRotatef(c->values[LP_SPHERE_ROLL],       0.0f, 0.0f, 1.0f);
-        glRotatef(c->values[LP_SPHERE_ELEVATION], -1.0f, 0.0f, 0.0f);
-        glRotatef(c->values[LP_SPHERE_AZIMUTH],    0.0f, 1.0f, 0.0f);
+        glRotatef(t->values[LP_SPHERE_ROLL],       0.0f, 0.0f, 1.0f);
+        glRotatef(t->values[LP_SPHERE_ELEVATION], -1.0f, 0.0f, 0.0f);
+        glRotatef(t->values[LP_SPHERE_AZIMUTH],    0.0f, 1.0f, 0.0f);
     }
     glMatrixMode(GL_MODELVIEW);
 
@@ -1000,12 +1004,12 @@ static float draw_sphere_image(GLuint vbo, GLuint ebo, GLsizei n,
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE);
 
-    draw_sphere(vbo, ebo, n);
+    draw_object(GL_QUADS, vb, qb, 4 * SPH_R * SPH_C);
 
     return 1.0f;
 }
 
-static void draw_sphere_grid(GLuint vbo, GLuint ebo, GLsizei n)
+static void draw_sphere_grid(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
 {
     glUseProgram(0);
 
@@ -1015,11 +1019,15 @@ static void draw_sphere_grid(GLuint vbo, GLuint ebo, GLsizei n)
     glEnable(GL_LINE_SMOOTH);
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glLineWidth(0.5f);
     glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    draw_sphere(vbo, ebo, n);
+    {
+        glLineWidth(0.5f);
+        draw_object(GL_QUADS, vb, qb, 4 * SPH_R     * SPH_C);
+        glLineWidth(2.0f);
+        draw_object(GL_LINES, vb, lb, 8 * SPH_R + 2 * SPH_C);
+    }
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
@@ -1076,12 +1084,14 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
     {
         for (i = 0; i < LP_MAX_IMAGE; i++)
             if (L->images[i].texture)
-                c += draw_sphere_image(L->vbo_sphere, L->ebo_sphere,
-                                       L->num_sphere, L->images + i, acc);
+                c += draw_sphere_image(L->vb_sphere, L->qb_sphere, SPH_R, SPH_C,
+                                       acc, 0.0, L->images + i);
     }
     else
-        c += draw_sphere_image(L->vbo_sphere, L->ebo_sphere,
-                               L->num_sphere, L->images + L->select, acc);
+    {
+        c += draw_sphere_image(L->vb_sphere, L->qb_sphere, SPH_R, SPH_C,
+                               acc, 1.0, L->images + L->select);
+    }
 
     /* Map the accumulation buffer to the screen. */
 
@@ -1091,6 +1101,6 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
     draw_sphere_screen(fin, e, c, L->color);
 
     if (f & LP_RENDER_GRID)
-        draw_sphere_grid(L->vbo_sphere, L->ebo_sphere, L->num_sphere);
+        draw_sphere_grid(L->vb_sphere, L->qb_sphere, L->lb_sphere, SPH_R, SPH_C);
 }
 /*----------------------------------------------------------------------------*/

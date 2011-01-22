@@ -9,9 +9,9 @@ uniform float         exposure;
 void main()
 {
     vec4 C = texture2DRect(image, gl_FragCoord.xy);
-    vec3 c = 1.0 - exp(-exposure * C.rgb / count);
+    vec3 c = 1.0 - exp(-exposure * C.rgb / C.a);
 
-    gl_FragColor = vec4(c, C.a);
+    gl_FragColor = vec4(c, 1.0);
 }
 
 /*----------------------------------------------------------------------------*/

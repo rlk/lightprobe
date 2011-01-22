@@ -125,6 +125,19 @@
   (define (lp-get-sphere-azimuth)     (lp-get-value lightprobe 4))
   (define (lp-get-sphere-roll)        (lp-get-value lightprobe 5))
 
+  (define (lp-add-circle-x         d)
+    (lp-set-circle-x         (+ d (lp-get-circle-x))))
+  (define (lp-add-circle-y         d)
+    (lp-set-circle-y         (+ d (lp-get-circle-y))))
+  (define (lp-add-circle-radius    d)
+    (lp-set-circle-radius    (+ d (lp-get-circle-radius))))
+  (define (lp-add-sphere-elevation d)
+    (lp-set-sphere-elevation (+ d (lp-get-sphere-elevation))))
+  (define (lp-add-sphere-azimuth   d)
+    (lp-set-sphere-azimuth   (+ d (lp-get-sphere-azimuth))))
+  (define (lp-add-sphere-roll      d)
+    (lp-set-sphere-roll      (+ d (lp-get-sphere-roll))))
+
   ;;----------------------------------------------------------------------------
   ;; Return the exact integer closest to the given value. This function really
   ;; should be in the standard library.
@@ -385,12 +398,13 @@
                                     (d (add-image (string->path nm))))
 
                                (if d (begin
+                                       (lp-sel-image lightprobe d)
                                        (lp-set-circle-x         cx)
                                        (lp-set-circle-y         cy)
                                        (lp-set-circle-radius    cr)
                                        (lp-set-sphere-elevation se)
-                                       (lp-set-sphere-azimuth   se)
-                                       (lp-set-sphere-roll      se))
+                                       (lp-set-sphere-azimuth   sa)
+                                       (lp-set-sphere-roll      sr))
                                    (void))))))
 
           (let loop ((in (open-input-file path)))
@@ -798,21 +812,21 @@
              (case click-op
 
                ((circle-move)
-                (lp-set-circle-x         (+ (lp-get-circle-x)         dx))
-                (lp-set-circle-y         (+ (lp-get-circle-y)         dy))
+                (lp-add-circle-x dx)
+                (lp-add-circle-y dy)
                 (refresh))
 
                ((circle-size)
-                (lp-set-circle-radius    (- (lp-get-circle-radius)    dy))
+                (lp-add-circle-radius (* 0.1 dy))
                 (refresh))
             
                ((sphere-rot)
-                (lp-set-sphere-azimuth   (+ (lp-get-sphere-azimuth)   dx))
-                (lp-set-sphere-elevation (+ (lp-get-sphere-elevation) dy))
+                (lp-add-sphere-azimuth   (* 0.1 dx))
+                (lp-add-sphere-elevation (* 0.1 dy))
                 (refresh))
 
                ((sphere-roll)
-                (lp-set-sphere-roll      (+ (lp-get-sphere-roll)      dy))
+                (lp-add-sphere-roll (* 0.1 dy))
                 (refresh))
 
                ((view-pan)
