@@ -30,22 +30,6 @@ void lp_del_image(lightprobe *lp, int);
 void lp_sel_image(lightprobe *lp, int);
 
 /*----------------------------------------------------------------------------*/
-/*
-enum
-{
-    LP_FLAG_LOADED = 1,
-    LP_FLAG_ACTIVE = 2,
-    LP_FLAG_HIDDEN = 4
-};
-
-void lp_set_image_flags(lightprobe *lp, int i, int f);
-void lp_clr_image_flags(lightprobe *lp, int i, int f);
-int  lp_get_image_flags(lightprobe *lp, int i);
-
-#define LP_MOVE(f) (((f & LP_FLAG_LOADED) != 0) && ((f & LP_FLAG_ACTIVE) != 0))
-#define LP_DRAW(f) (((f & LP_FLAG_LOADED) != 0) && ((f & LP_FLAG_HIDDEN) == 0))
-*/
-/*----------------------------------------------------------------------------*/
 
 enum
 {
@@ -55,7 +39,11 @@ enum
     LP_SPHERE_ELEVATION,
     LP_SPHERE_AZIMUTH,
     LP_SPHERE_ROLL,
-    LP_MAX_VALUE
+    LP_MAX_VALUE,
+    LP_SPHERE_X,
+    LP_SPHERE_Y,
+    LP_SPHERE_Z,
+    LP_SPHERE_W
 };
 
 int   lp_get_width (lightprobe *lp);
@@ -76,7 +64,12 @@ void lp_render_circle(lightprobe *lp, int f, int w, int h,
                       float x, float y, float e, float z);
 void lp_render_sphere(lightprobe *lp, int f, int w, int h,
                       float x, float y, float e, float z);
-
+/*
+void lp_render_img(lightprobe *lp, int f, int W, int H, float e, float z,
+                                                        float x, float y);
+void lp_render_env(lightprobe *lp, int f, int W, int H, float e, float k,
+                                      float x, float y, float z, float w);
+*/
 /*----------------------------------------------------------------------------*/
 
 int lp_export_cube  (lightprobe *lp, const char *path);

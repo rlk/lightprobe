@@ -56,11 +56,11 @@ typedef struct image image;
 
 struct lightprobe
 {
-    GLuint  pro_circle;
-    GLuint  pro_sphere_dat_acc;
-    GLuint  pro_sphere_dat_fin;
-    GLuint  pro_sphere_res_acc;
-    GLuint  pro_sphere_res_fin;
+    GLuint  accum_prog;
+    GLuint  final_prog;
+
+    int     prog_mode;
+    int     prog_flag;
 
     GLuint  vb_sphere;
     GLuint  qb_sphere;
@@ -974,6 +974,88 @@ static void transform_sphere(int s)
 {
 }
 #endif
+
+/*----------------------------------------------------------------------------*/
+
+/* Various render modes, render options, and export formats are implemented   */
+/* by different GLSL programs. A mix-and-match of vertex and fragent shaders  */
+/* with separate accumulation and final rendering passes take into account    */
+/* all possible circumstances. When the mode, options, or operation changes,  */
+/* the program must change accordingly.                                       */
+
+enum
+{
+    LP_RENDER_IMAGE = 0,
+    LP_RENDER_VIEW  = 1,
+    LP_RENDER_CUBE  = 2,
+    LP_RENDER_DOME  = 3,
+    LP_RENDER_RECT  = 4,
+};
+
+void lp_set_program(lightprobe *L, int m, int f)
+{
+    /* If the mode or flags have changed... */
+
+    if (m != L->prog_mode || f != L->prog_flag)
+    {
+        char *accum_vert = 0;
+        char *accum_frag = 0;
+        char *final_vert = 0;
+        char *final_frag = 0;
+
+        /* Determine the shader source files for the current mode and flags. */
+
+        if (m == LP_RENDER_IMAGE)
+        {
+            final_vert = "lp-image.vert";
+            final_frag = "lp-image.frag";
+        }
+        else
+        {
+            final_vert = "lp-final.vert"
+
+            if (f & LP_RENDER_RES)
+            {
+                accum_frag = "lp-accum-reso.frag";
+                final_frag = "lp-final-reso.frag";
+            }
+            else
+            {
+                accum_frag = "lp-accum-data.frag";
+                final_frag = "lp-final-data.frag";
+            }
+
+            if (m == LP_RENDER_VIEW)
+                accum_vert = "lp-accum-view.vert";
+            if (m == LP_RENDER_CUBE)
+                accum_vert = "lp-accum-cube.vert";
+            if (m == LP_RENDER_DOME)
+                accum_vert = "lp-accum-dome.vert";
+            if (m == LP_RENDER_RECT)
+                accum_vert = "lp-accum-rect.vert";
+        }
+
+        /* Release any previous program. */
+
+        if (L->accum_prog)
+            free_program(L->accum_prog);
+        if (L->free_prog)
+            free_program(L->final_prog);
+
+        /* Load the new programs. */
+
+        if (accum_vert && accum_frag)
+            L->accum_prog = load_program(accum_vert, accum_frag);
+        else
+            L->accum_prog = 0;
+
+        if (final_vert && final_frag)
+            L->final_prog = load_program(final_vert, final_frag);
+        else
+            L->final_prog = 0;
+    }
+}
+
 /*----------------------------------------------------------------------------*/
 
 static float draw_sphere_image(GLuint vb, GLuint qb,
