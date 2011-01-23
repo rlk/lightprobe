@@ -28,19 +28,21 @@
 
 /*----------------------------------------------------------------------------*/
 
-#define CIRCLE_VERT         "lp-circle.vert"
-#define CIRCLE_FRAG         "lp-circle.frag"
-#define SPHERE_ACC_VERT     "lp-sphere-acc.vert"
-#define SPHERE_FIN_VERT     "lp-sphere-fin.vert"
-#define SPHERE_DAT_ACC_FRAG "lp-sphere-dat-acc.frag"
-#define SPHERE_DAT_FIN_FRAG "lp-sphere-dat-fin.frag"
-#define SPHERE_RES_ACC_FRAG "lp-sphere-res-acc.frag"
-#define SPHERE_RES_FIN_FRAG "lp-sphere-res-fin.frag"
-
 #define LP_MAX_IMAGE 8
 
 #define SPH_R 32
 #define SPH_C 64
+
+/*----------------------------------------------------------------------------*/
+
+struct framebuffer
+{
+    GLuint frame;
+    GLuint color;
+    GLuint depth;
+};
+
+typedef struct framebuffer framebuffer;
 
 /*----------------------------------------------------------------------------*/
 
@@ -54,24 +56,34 @@ struct image
 
 typedef struct image image;
 
+/*----------------------------------------------------------------------------*/
+
 struct lightprobe
 {
-    GLuint  accum_prog;
-    GLuint  final_prog;
+    /* GLSL programs. */
 
     int     prog_mode;
     int     prog_flag;
 
-    GLuint  vb_sphere;
-    GLuint  qb_sphere;
-    GLuint  lb_sphere;
+    GLuint  accum_prog;
+    GLuint  final_prog;
 
+    /* Sphere vertex buffers. */
+
+    GLuint  vert_buff;
+    GLuint  quad_buff;
+    GLuint  line_buff;
+
+    GLsizei r;
+    GLsizei c;
+
+    /* Accumulation buffer. */
+
+    framebuffer accum;
     GLsizei w;
     GLsizei h;
 
-    GLuint  frame;
-    GLuint  color;
-    GLuint  depth;
+    /* Source images. */
 
     image images[LP_MAX_IMAGE];
     int   select;
@@ -449,9 +461,9 @@ static void free_program(GLuint program)
 
 /*----------------------------------------------------------------------------*/
 
-static void init_color(GLenum target, GLuint color, GLsizei w, GLsizei h)
+static void size_color(GLenum target, GLuint buffer, GLsizei w, GLsizei h)
 {
-    glBindTexture(target, color);
+    glBindTexture(target, buffer);
 
     glTexImage2D(target, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, NULL);
 
@@ -461,9 +473,9 @@ static void init_color(GLenum target, GLuint color, GLsizei w, GLsizei h)
     glTexParameteri(target, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
 }
 
-static void init_depth(GLenum target, GLuint depth, GLsizei w, GLsizei h)
+static void size_depth(GLenum target, GLuint buffer, GLsizei w, GLsizei h)
 {
-    glBindTexture(target, depth);
+    glBindTexture(target, buffer);
 
     glTexImage2D(target, 0, GL_DEPTH_COMPONENT24, w, h, 0,
                  GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL);
@@ -474,7 +486,7 @@ static void init_depth(GLenum target, GLuint depth, GLsizei w, GLsizei h)
     glTexParameteri(target, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
 }
 
-static void test_frame()
+static void test_framebuffer()
 {
     switch (glCheckFramebufferStatus(GL_FRAMEBUFFER))
     {
@@ -499,22 +511,136 @@ static void test_frame()
     }
 }
 
-void init_frame(GLuint frame, GLuint color, GLuint depth, GLsizei w, GLsizei h)
+static void size_framebuffer(framebuffer *F, GLsizei w, GLsizei h)
 {
     GLenum target = GL_TEXTURE_RECTANGLE_ARB;
     
-    init_color(target, color, w, h);
-    init_depth(target, depth, w, h);
+    size_color(target, F->color, w, h);
+    size_depth(target, F->depth, w, h);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, frame);
+    glBindFramebuffer(GL_FRAMEBUFFER, F->frame);
     {
         glFramebufferTexture2D(GL_FRAMEBUFFER,
-                               GL_COLOR_ATTACHMENT0, target, color, 0);
+                               GL_COLOR_ATTACHMENT0, target, F->color, 0);
         glFramebufferTexture2D(GL_FRAMEBUFFER,
-                               GL_DEPTH_ATTACHMENT,  target, depth, 0);
-        test_frame();
+                               GL_DEPTH_ATTACHMENT,  target, F->depth, 0);
+        test_framebuffer();
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+static void init_framebuffer(framebuffer *F, GLsizei w, GLsizei h)
+{
+    glGenFramebuffers(1, &F->frame);
+    glGenTextures    (1, &F->color);
+    glGenTextures    (1, &F->depth);
+
+    if (w && h) size_framebuffer(F, w, h);
+}
+
+static void free_framebuffer(framebuffer *F)
+{
+    glDeleteTextures    (1, &F->depth);
+    glDeleteTextures    (1, &F->color);
+    glDeleteFramebuffers(1, &F->frame);
+}
+
+/*----------------------------------------------------------------------------*/
+
+/* Various render modes, render options, and export formats are implemented   */
+/* by different GLSL programs. A mix-and-match of vertex and fragent shaders  */
+/* with separate accumulation and final rendering passes take into account    */
+/* all possible circumstances. When the mode, options, or operation changes,  */
+/* the program must change accordingly.                                       */
+
+enum
+{
+    LP_RENDER_IMAGE = 0,
+    LP_RENDER_VIEW  = 1,
+    LP_RENDER_CUBE  = 2,
+    LP_RENDER_DOME  = 3,
+    LP_RENDER_RECT  = 4,
+};
+
+static void lp_set_program(lightprobe *L, int m, int f)
+{
+    /* If the mode or flags have changed... */
+
+    if (m != L->prog_mode || f != L->prog_flag)
+    {
+        char *accum_vert = 0;
+        char *accum_frag = 0;
+        char *final_vert = 0;
+        char *final_frag = 0;
+
+        /* Determine the shader source files for the current mode and flags. */
+
+        if (m == LP_RENDER_IMAGE)
+        {
+            final_vert = "lp-image.vert";
+            final_frag = "lp-image.frag";
+        }
+        else
+        {
+            final_vert = "lp-final.vert";
+
+            if (f & LP_RENDER_RES)
+            {
+                accum_frag = "lp-accum-reso.frag";
+                final_frag = "lp-final-reso.frag";
+            }
+            else
+            {
+                accum_frag = "lp-accum-data.frag";
+                final_frag = "lp-final-data.frag";
+            }
+
+            if (m == LP_RENDER_VIEW)
+                accum_vert = "lp-accum-view.vert";
+            if (m == LP_RENDER_CUBE)
+                accum_vert = "lp-accum-cube.vert";
+            if (m == LP_RENDER_DOME)
+                accum_vert = "lp-accum-dome.vert";
+            if (m == LP_RENDER_RECT)
+                accum_vert = "lp-accum-rect.vert";
+        }
+
+        /* Release any previous program. */
+
+        if (L->accum_prog)
+            free_program(L->accum_prog);
+        if (L->final_prog)
+            free_program(L->final_prog);
+
+        /* Load the new programs. */
+
+        if (accum_vert && accum_frag)
+            L->accum_prog = load_program(accum_vert, accum_frag);
+        else
+            L->accum_prog = 0;
+
+        if (final_vert && final_frag)
+            L->final_prog = load_program(final_vert, final_frag);
+        else
+            L->final_prog = 0;
+
+        L->prog_mode = m;
+        L->prog_flag = f;
+    }
+}
+
+/* The accumulation buffer size can change due to a window resize event or an */
+/* export request with a specific size. Resize the FBO-bound textures to      */
+/* match the gives size as necessary.                                         */
+
+static void lp_set_buffer(lightprobe *L, int w, int h)
+{
+    if (L->w != (GLsizei) w || L->h != (GLsizei) h)
+    {
+        size_framebuffer(&L->accum, w, h);
+        L->w  = (GLsizei) w;
+        L->h  = (GLsizei) h;
+    }
 }
 
 /*----------------------------------------------------------------------------*/
@@ -637,42 +763,39 @@ static void draw_object(GLenum mode, GLuint vbo, GLuint ebo, GLsizei n)
 
 /*----------------------------------------------------------------------------*/
 
-static void gl_init(lightprobe *L)
+static void gl_init(lightprobe *L, GLsizei r, GLsizei c)
 {
-    /* Initialize all GLSL. */
-
-    L->pro_circle         = load_program(CIRCLE_VERT, CIRCLE_FRAG);
-    L->pro_sphere_dat_acc = load_program(SPHERE_ACC_VERT, SPHERE_DAT_ACC_FRAG);
-    L->pro_sphere_dat_fin = load_program(SPHERE_FIN_VERT, SPHERE_DAT_FIN_FRAG);
-    L->pro_sphere_res_acc = load_program(SPHERE_ACC_VERT, SPHERE_RES_ACC_FRAG);
-    L->pro_sphere_res_fin = load_program(SPHERE_FIN_VERT, SPHERE_RES_FIN_FRAG);
+    L->prog_mode = -1;
+    L->prog_flag = -1;
 
     /* Generate off-screen render buffers. */
 
-    glGenFramebuffers(1, &L->frame);
-    glGenTextures    (1, &L->color);
-    glGenTextures    (1, &L->depth);
+    init_framebuffer(&L->accum, 0, 0);
 
     /* Generate and initialize vertex buffer objects. */
 
-    glGenBuffers(1, &L->vb_sphere);
-    glGenBuffers(1, &L->qb_sphere);
-    glGenBuffers(1, &L->lb_sphere);
+    glGenBuffers(1, &L->vert_buff);
+    glGenBuffers(1, &L->quad_buff);
+    glGenBuffers(1, &L->line_buff);
 
-    make_sphere(L->vb_sphere, L->qb_sphere, L->lb_sphere, SPH_R, SPH_C);
+    L->r = r;
+    L->c = c;
+    make_sphere(L->vert_buff, L->quad_buff, L->line_buff, L->r, L->c);
 }
 
 static void gl_free(lightprobe *L)
 {
-    glDeleteBuffers(1, &L->vb_sphere);
-    glDeleteBuffers(1, &L->qb_sphere);
-    glDeleteBuffers(1, &L->lb_sphere);
+    glDeleteBuffers(1, &L->vert_buff);
+    glDeleteBuffers(1, &L->quad_buff);
+    glDeleteBuffers(1, &L->line_buff);
 
-    free_program(L->pro_circle);
-    free_program(L->pro_sphere_dat_acc);
-    free_program(L->pro_sphere_dat_fin);
-    free_program(L->pro_sphere_res_acc);
-    free_program(L->pro_sphere_res_fin);
+    free_framebuffer(&L->accum);
+
+    if (L->accum_prog) free_program(L->accum_prog);
+    if (L->final_prog) free_program(L->final_prog);
+
+    L->accum_prog = 0;
+    L->final_prog = 0;
 
     L->w = 0;
     L->h = 0;
@@ -694,7 +817,7 @@ lightprobe *lp_init()
     sync(1);
 
     if ((L = (lightprobe *) calloc (1, sizeof (lightprobe))))
-        gl_init(L);
+        gl_init(L, SPH_R, SPH_C);
 
     return L;
 }
@@ -705,7 +828,7 @@ lightprobe *lp_init()
 void lp_tilt(lightprobe *L)
 {
     gl_free(L);
-    gl_init(L);
+    gl_init(L, SPH_R, SPH_C);
 }
 
 /* Release a lightprobe object and all state associated with it.  Unload any  */
@@ -722,26 +845,6 @@ void lp_free(lightprobe *L)
 
     gl_free(L);
     free(L);
-}
-
-/*----------------------------------------------------------------------------*/
-
-int lp_export_cube(lightprobe *L, const char *path)
-{
-    printf("Export Cube Map %s\n", path);
-    return 1;
-}
-
-int lp_export_dome(lightprobe *L, const char *path)
-{
-    printf("Export Dome Map %s\n", path);
-    return 1;
-}
-
-int lp_export_sphere(lightprobe *L, const char *path)
-{
-    printf("Export Sphere Map %s\n", path);
-    return 1;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -875,10 +978,10 @@ static void draw_circle_setup(lightprobe *L, int w, int h, float e)
 
     /* Ready the program. */
 
-    glUseProgram(L->pro_circle);
+    glUseProgram(L->final_prog);
 
-    UNIFORM1I(L->pro_circle, "image",    0);
-    UNIFORM1F(L->pro_circle, "exposure", e);
+    UNIFORM1I(L->final_prog, "image",    0);
+    UNIFORM1F(L->final_prog, "exposure", e);
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -927,8 +1030,11 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
     if (L->images[L->select].texture)
     {
+        lp_set_program(L, LP_RENDER_IMAGE, f);
+        lp_set_buffer (L, w, h);
+
         draw_circle_setup(L, w, h, e);
-        draw_circle_image(L->images + L->select, L->pro_circle, w, h, x, y, z);
+        draw_circle_image(L->images + L->select, L->final_prog, w, h, x, y, z);
     }
 }
 
@@ -977,150 +1083,43 @@ static void transform_sphere(int s)
 
 /*----------------------------------------------------------------------------*/
 
-/* Various render modes, render options, and export formats are implemented   */
-/* by different GLSL programs. A mix-and-match of vertex and fragent shaders  */
-/* with separate accumulation and final rendering passes take into account    */
-/* all possible circumstances. When the mode, options, or operation changes,  */
-/* the program must change accordingly.                                       */
-
-enum
+static void draw_sphere_accum(lightprobe *L, image *I, GLfloat s)
 {
-    LP_RENDER_IMAGE = 0,
-    LP_RENDER_VIEW  = 1,
-    LP_RENDER_CUBE  = 2,
-    LP_RENDER_DOME  = 3,
-    LP_RENDER_RECT  = 4,
-};
-
-void lp_set_program(lightprobe *L, int m, int f)
-{
-    /* If the mode or flags have changed... */
-
-    if (m != L->prog_mode || f != L->prog_flag)
+    if (I->texture)
     {
-        char *accum_vert = 0;
-        char *accum_frag = 0;
-        char *final_vert = 0;
-        char *final_frag = 0;
+        glUseProgram(L->accum_prog);
 
-        /* Determine the shader source files for the current mode and flags. */
+        glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
 
-        if (m == LP_RENDER_IMAGE)
+        UNIFORM1I(L->accum_prog, "image",    0);
+        UNIFORM1F(L->accum_prog, "saturate", s);
+        UNIFORM1F(L->accum_prog, "circle_r", I->values[LP_CIRCLE_RADIUS]);
+        UNIFORM2F(L->accum_prog, "circle_p", I->values[LP_CIRCLE_X],
+                                             I->values[LP_CIRCLE_Y]);
+
+        glMatrixMode(GL_TEXTURE);
         {
-            final_vert = "lp-image.vert";
-            final_frag = "lp-image.frag";
+            glLoadIdentity();
+            glRotatef(I->values[LP_SPHERE_ROLL],       0.0f, 0.0f, 1.0f);
+            glRotatef(I->values[LP_SPHERE_ELEVATION], -1.0f, 0.0f, 0.0f);
+            glRotatef(I->values[LP_SPHERE_AZIMUTH],    0.0f, 1.0f, 0.0f);
         }
-        else
-        {
-            final_vert = "lp-final.vert"
+        glMatrixMode(GL_MODELVIEW);
 
-            if (f & LP_RENDER_RES)
-            {
-                accum_frag = "lp-accum-reso.frag";
-                final_frag = "lp-final-reso.frag";
-            }
-            else
-            {
-                accum_frag = "lp-accum-data.frag";
-                final_frag = "lp-final-data.frag";
-            }
+        glBlendFunc(GL_ONE, GL_ONE);
 
-            if (m == LP_RENDER_VIEW)
-                accum_vert = "lp-accum-view.vert";
-            if (m == LP_RENDER_CUBE)
-                accum_vert = "lp-accum-cube.vert";
-            if (m == LP_RENDER_DOME)
-                accum_vert = "lp-accum-dome.vert";
-            if (m == LP_RENDER_RECT)
-                accum_vert = "lp-accum-rect.vert";
-        }
-
-        /* Release any previous program. */
-
-        if (L->accum_prog)
-            free_program(L->accum_prog);
-        if (L->free_prog)
-            free_program(L->final_prog);
-
-        /* Load the new programs. */
-
-        if (accum_vert && accum_frag)
-            L->accum_prog = load_program(accum_vert, accum_frag);
-        else
-            L->accum_prog = 0;
-
-        if (final_vert && final_frag)
-            L->final_prog = load_program(final_vert, final_frag);
-        else
-            L->final_prog = 0;
+        draw_object(GL_QUADS, L->vert_buff, L->quad_buff, 4 * L->r * L->c);
     }
 }
 
-/*----------------------------------------------------------------------------*/
-
-static float draw_sphere_image(GLuint vb, GLuint qb,
-                               GLsizei r, GLsizei c,
-                               GLuint  p, GLfloat s, image *t)
+static void draw_sphere_final(lightprobe *L, GLfloat e)
 {
-    glUseProgram(p);
+    glUseProgram(L->final_prog);
 
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, t->texture);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, L->accum.color);
 
-    UNIFORM1I(p, "image",    0);
-    UNIFORM1F(p, "saturate", s);
-    UNIFORM1F(p, "circle_r", t->values[LP_CIRCLE_RADIUS]);
-    UNIFORM2F(p, "circle_p", t->values[LP_CIRCLE_X],
-                             t->values[LP_CIRCLE_Y]);
-
-    glMatrixMode(GL_TEXTURE);
-    {
-        glLoadIdentity();
-        glRotatef(t->values[LP_SPHERE_ROLL],       0.0f, 0.0f, 1.0f);
-        glRotatef(t->values[LP_SPHERE_ELEVATION], -1.0f, 0.0f, 0.0f);
-        glRotatef(t->values[LP_SPHERE_AZIMUTH],    0.0f, 1.0f, 0.0f);
-    }
-    glMatrixMode(GL_MODELVIEW);
-
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_ONE);
-
-    draw_object(GL_QUADS, vb, qb, 4 * SPH_R * SPH_C);
-
-    return 1.0f;
-}
-
-static void draw_sphere_grid(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
-{
-    glUseProgram(0);
-
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_LINE_SMOOTH);
-
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
-
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    {
-        glLineWidth(0.5f);
-        draw_object(GL_QUADS, vb, qb, 4 * SPH_R     * SPH_C);
-        glLineWidth(2.0f);
-        draw_object(GL_LINES, vb, lb, 8 * SPH_R + 2 * SPH_C);
-    }
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-}
-
-static void draw_sphere_screen(GLuint p, GLfloat e, GLfloat c, GLuint color)
-{
-    glUseProgram(p);
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, color);
-
-    UNIFORM1I(p, "image",    0);
-    UNIFORM1F(p, "count",    c);
-    UNIFORM1F(p, "exposure", e);
+    UNIFORM1I(L->final_prog, "image",    0);
+    UNIFORM1F(L->final_prog, "exposure", e);
 
     glBegin(GL_QUADS);
     {
@@ -1132,57 +1131,109 @@ static void draw_sphere_screen(GLuint p, GLfloat e, GLfloat c, GLuint color)
     glEnd();
 }
 
+static void draw_sphere_grid(lightprobe *L)
+{
+    glUseProgram(0);
+
+    glEnable(GL_LINE_SMOOTH);
+
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    {
+        glLineWidth(0.5f);
+        draw_object(GL_QUADS, L->vert_buff, L->quad_buff, 4 * L->r     * L->c);
+        glLineWidth(2.0f);
+        draw_object(GL_LINES, L->vert_buff, L->line_buff, 8 * L->r + 2 * L->c);
+    }
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
+{
+    glEnable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
+
+    glDisable(GL_DEPTH_TEST);
+
+    /* Render any/all images to the accumulation buffer. */
+
+    glBindFramebuffer(GL_FRAMEBUFFER, L->accum.frame);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if (f & LP_RENDER_ALL)
+    {
+        int i;
+        for (i = 0; i < LP_MAX_IMAGE; i++)
+            draw_sphere_accum(L, L->images + i, 0.0);
+    }
+    else
+        draw_sphere_accum(L, L->images + L->select, 1.0);
+
+    /* Map the accumulation buffer to the output buffer. */
+
+    glBindFramebuffer(GL_FRAMEBUFFER, frame);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    draw_sphere_final(L, e);
+
+    /* Draw the grid. */
+
+    if (f & LP_RENDER_GRID)
+        draw_sphere_grid(L);
+}
+
+/*----------------------------------------------------------------------------*/
+
 void lp_render_sphere(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
-    GLuint acc = (f & LP_RENDER_RES) ? L->pro_sphere_res_acc
-                                     : L->pro_sphere_dat_acc;
-    GLuint fin = (f & LP_RENDER_RES) ? L->pro_sphere_res_fin
-                                     : L->pro_sphere_dat_fin;
-    float c = 0.0;
-    int i;
-
     assert(L);
 
     glViewport(0, 0, w, h);
 
-    /* Resize the accumulation buffer to match the viewport as necessary. */
-
-    if (L->w != (GLsizei) w || L->h != (GLsizei) h)
-    {
-        L->w  = (GLsizei) w;
-        L->h  = (GLsizei) h;
-        init_frame(L->frame, L->color, L->depth, L->w, L->h);
-    }
-
-    /* Render any/all images to the accumulation buffer. */
-
-    glBindFramebuffer(GL_FRAMEBUFFER, L->frame);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    lp_set_program(L, LP_RENDER_VIEW, f);
+    lp_set_buffer (L, w, h);
 
     transform_view(w, h, x, y, z);
 
-    if (f & LP_RENDER_ALL)
-    {
-        for (i = 0; i < LP_MAX_IMAGE; i++)
-            if (L->images[i].texture)
-                c += draw_sphere_image(L->vb_sphere, L->qb_sphere, SPH_R, SPH_C,
-                                       acc, 0.0, L->images + i);
-    }
-    else
-    {
-        c += draw_sphere_image(L->vb_sphere, L->qb_sphere, SPH_R, SPH_C,
-                               acc, 1.0, L->images + L->select);
-    }
-
-    /* Map the accumulation buffer to the screen. */
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    draw_sphere_screen(fin, e, c, L->color);
-
-    if (f & LP_RENDER_GRID)
-        draw_sphere_grid(L->vb_sphere, L->qb_sphere, L->lb_sphere, SPH_R, SPH_C);
+    draw_sphere(0, L, f, e);
 }
+
 /*----------------------------------------------------------------------------*/
+
+int lp_export_cube(lightprobe *L, const char *path, int s, int f)
+{
+    printf("Export Cube Map %s\n", path);
+    return 1;
+}
+
+int lp_export_dome(lightprobe *L, const char *path, int s, int f)
+{
+    printf("Export Dome Map %s\n", path);
+    return 1;
+}
+
+int lp_export_sphere(lightprobe *L, const char *path, int s, int f)
+{
+    const int w = 2 * s;
+    const int h =     s;
+
+    framebuffer image;
+
+    init_framebuffer(&image, w, h);
+    {
+        lp_set_program(L, LP_RENDER_VIEW, f);
+        lp_set_buffer (L, w, h);
+
+        draw_sphere(image.frame, L, f, 1.0);
+    }
+    free_framebuffer(&image);
+
+    return 1;
+}
+
+/*----------------------------------------------------------------------------*/
+

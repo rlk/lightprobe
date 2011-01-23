@@ -102,11 +102,11 @@
   ;; Export
 
   (define lp-export-cube
-    (gl-ffi "lp_export_cube"   (_fun _pointer _path -> _bool)))
+    (gl-ffi "lp_export_cube"   (_fun _pointer _path _int _int -> _bool)))
   (define lp-export-dome
-    (gl-ffi "lp_export_dome"   (_fun _pointer _path -> _bool)))
+    (gl-ffi "lp_export_dome"   (_fun _pointer _path _int _int -> _bool)))
   (define lp-export-sphere
-    (gl-ffi "lp_export_sphere" (_fun _pointer _path -> _bool)))
+    (gl-ffi "lp_export_sphere" (_fun _pointer _path _int _int -> _bool)))
 
   ;;----------------------------------------------------------------------------
   ;; Image value accessors
@@ -455,7 +455,9 @@
       (init-field notify)
 
       (define (get-shifted-shortcut-prefix)
-        (cons 'shift (get-default-shortcut-prefix)))
+        (cons 'shift  (get-default-shortcut-prefix)))
+      (define (get-optional-shortcut-prefix)
+        (cons 'option (get-default-shortcut-prefix)))
 
       ;; -----------------------------------------------------------------------
       ;; File Menu
@@ -500,19 +502,19 @@
 
         (define (do-export-cube control event)
           (let ((path (put-file)))
-            (if path (lp-export-cube   lightprobe path) #f)))
+            (if path (lp-export-cube   lightprobe path 1024 0) #f)))
 
         ;; File / Export Dome...
 
         (define (do-export-dome control event)
           (let ((path (put-file)))
-            (if path (lp-export-dome   lightprobe path) #f)))
+            (if path (lp-export-dome   lightprobe path 1024 0) #f)))
 
         ;; File / Export Sphere...
 
         (define (do-export-sphere control event)
           (let ((path (put-file)))
-            (if path (lp-export-sphere lightprobe path) #f)))
+            (if path (lp-export-sphere lightprobe path 1024 0) #f)))
 
         ;; ---------------------------------------------------------------------
         ;; File / Tilt
@@ -552,12 +554,13 @@
         (new menu-item% [parent file]
                         [label "Export Dome Map..."]
                         [callback do-export-dome]
-                        [shortcut #\e])
+                        [shortcut #\e]
+                        [shortcut-prefix (get-shifted-shortcut-prefix)])
         (new menu-item% [parent file]
                         [label "Export Sphere Map..."]
                         [callback do-export-sphere]
                         [shortcut #\e]
-                        [shortcut-prefix (get-shifted-shortcut-prefix)])
+                        [shortcut-prefix (get-optional-shortcut-prefix)])
 
         (new separator-menu-item% [parent file]) ; -----------------------------
 
