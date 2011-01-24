@@ -22,9 +22,10 @@
 
 /*----------------------------------------------------------------------------*/
 
-#define UNIFORM1I(p, s, i)    glUniform1i(glGetUniformLocation(p, s), i)
-#define UNIFORM1F(p, s, f)    glUniform1f(glGetUniformLocation(p, s), f)
-#define UNIFORM2F(p, s, a, b) glUniform2f(glGetUniformLocation(p, s), a, b)
+#define UNIFORM1I(p, s, i)          glUniform1i(glGetUniformLocation(p, s), i)
+#define UNIFORM1F(p, s, f)          glUniform1f(glGetUniformLocation(p, s), f)
+#define UNIFORM2F(p, s, a, b)       glUniform2f(glGetUniformLocation(p, s), a, b)
+#define UNIFORM4F(p, s, a, b, c, d) glUniform4f(glGetUniformLocation(p, s), a, b, c, d)
 
 /*----------------------------------------------------------------------------*/
 
@@ -183,6 +184,39 @@ static void sync(int interval)
 
 /*----------------------------------------------------------------------------*/
 
+/* Write the contents of a buffer to a 4-channel 32-bit floating point TIFF   */
+/* image.                                                                     */
+
+#include "srgb.h"
+
+static void tifwrite(const char *path, int w, int h, void *p)
+{
+    TIFF *T = 0;
+    
+    TIFFSetWarningHandler(0);
+
+    if ((T = TIFFOpen(path, "w")))
+    {
+        uint32 i, s;
+        
+        TIFFSetField(T, TIFFTAG_IMAGEWIDTH,      w);
+        TIFFSetField(T, TIFFTAG_IMAGELENGTH,     h);
+        TIFFSetField(T, TIFFTAG_BITSPERSAMPLE,  32);
+        TIFFSetField(T, TIFFTAG_SAMPLESPERPIXEL, 4);
+        
+        TIFFSetField(T, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_RGB);
+        TIFFSetField(T, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP);
+        TIFFSetField(T, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+        TIFFSetField(T, TIFFTAG_ICCPROFILE,   sRGB_icc_len, sRGB_icc);
+        s = (uint32) TIFFScanlineSize(T);
+
+        for (i = 0; i < h; ++i)
+            TIFFWriteScanline(T, (uint8 *) p + (h - i - 1) * s, i, 0);
+
+        TIFFClose(T);
+    }
+}
+
 /* Load the contents of a TIFF image to a newly-allocated buffer.  Return the */
 /* buffer and its configuration.                                              */
 
@@ -218,39 +252,6 @@ static void *tifread(const char *path, int *w, int *h, int *c, int *b)
     }
     return p;
 }
-
-/* Write the contents of a buffer to a 4-channel 32-bit floating point TIFF   */
-/* image.                                                                     */
-#if 0
-static void tifwrite(const char *path, int w, int h, void *p)
-{
-    TIFF *T = 0;
-    
-    TIFFSetWarningHandler(0);
-
-    if ((T = TIFFOpen(path, "w")))
-    {
-        uint32 i, s;
-        
-        TIFFSetField(T, TIFFTAG_IMAGEWIDTH,      w);
-        TIFFSetField(T, TIFFTAG_IMAGELENGTH,     h);
-        TIFFSetField(T, TIFFTAG_BITSPERSAMPLE,  32);
-        TIFFSetField(T, TIFFTAG_SAMPLESPERPIXEL, 4);
-        
-        TIFFSetField(T, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_RGB);
-        TIFFSetField(T, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP);
-        TIFFSetField(T, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-/*      TIFFSetField(T, TIFFTAG_ICCPROFILE,   sizeof (sRGB), sRGB); */
-
-        s = (uint32) TIFFScanlineSize(T);
-
-        for (i = 0; i < h; ++i)
-            TIFFWriteScanline(T, (uint8 *) p + i * s, i, 0);
-
-        TIFFClose(T);
-    }
-}
-#endif
 
 /* Load the named TIFF image into a 32-bit floating point OpenGL rectangular  */
 /* texture. Release the image buffer after loading, and return the texture    */
@@ -490,6 +491,26 @@ static void free_framebuffer(framebuffer *F)
     glDeleteFramebuffers(1, &F->frame);
 }
 
+static void save_framebuffer(framebuffer *F, GLsizei w,
+                                             GLsizei h, const char *path)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, F->frame);
+    {
+        GLubyte *p;
+
+        if ((p = (GLubyte *) malloc(w * h * 4 * sizeof (GLfloat))))
+        {
+            glReadBuffer(GL_FRONT);
+            glReadPixels(0, 0, w, h, GL_RGBA, GL_FLOAT, p);
+            glReadBuffer(GL_BACK);
+
+            tifwrite(path, w, h, p);
+            free(p);
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 /*----------------------------------------------------------------------------*/
 
 /* Various render modes, render options, and export formats are implemented   */
@@ -628,11 +649,11 @@ static void make_sphere(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
 
     /* Compute the buffer sizes. */
 
-    const GLsizei vn = 6 * sizeof (GLfloat) * (r + 1) * (c + 1);
+    const GLsizei vn = 8 * sizeof (GLfloat) * (r + 1) * (c + 1);
     const GLsizei qn = 4 * sizeof (GLshort) * (    r * c);
     const GLsizei ln = 2 * sizeof (GLshort) * (4 * r + c);
 
-    /* Compute the vertex normal and tangent. */
+    /* Compute the vertex normal, tangent, and spherical coordinate. */
 
     glBindBuffer(GL_ARRAY_BUFFER, vb);
     glBufferData(GL_ARRAY_BUFFER, vn, 0, GL_STATIC_DRAW);
@@ -652,6 +673,9 @@ static void make_sphere(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
                 *v++ =  (GLfloat) cos(t);
                 *v++ =  (GLfloat)   0.0f;
                 *v++ = -(GLfloat) sin(t);
+
+                *v++ =  (GLfloat) j / (GLfloat) c;
+                *v++ =  (GLfloat) i / (GLfloat) r;
             }
         glUnmapBuffer(GL_ARRAY_BUFFER);
     }
@@ -709,19 +733,22 @@ static void make_sphere(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
 
 static void draw_object(GLenum mode, GLuint vbo, GLuint ebo, GLsizei n)
 {
-    size_t s = 3 * sizeof (GLfloat);
+    size_t s = sizeof (GLfloat);
 
     glBindBuffer(GL_ARRAY_BUFFER,         vbo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     {
         glEnableClientState(GL_VERTEX_ARRAY);
         glEnableClientState(GL_NORMAL_ARRAY);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
         {
-            glVertexPointer(3, GL_FLOAT, 2 * s, (const GLvoid *) 0);
-            glNormalPointer(   GL_FLOAT, 2 * s, (const GLvoid *) s);
+            glVertexPointer  (3, GL_FLOAT, 8 * s, (const GLvoid *) (s * 0));
+            glNormalPointer  (   GL_FLOAT, 8 * s, (const GLvoid *) (s * 3));
+            glTexCoordPointer(2, GL_FLOAT, 8 * s, (const GLvoid *) (s * 6));
 
             glDrawElements(mode, n, GL_UNSIGNED_SHORT, 0);
         }
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
         glDisableClientState(GL_NORMAL_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
     }
@@ -1008,49 +1035,6 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
 /*----------------------------------------------------------------------------*/
 
-/* Apply transformation matrices for rendering the interactive sphere view to */
-/* a viewport with width W and height H, at pan position X Y, and zoom Z.     */
-
-static void transform_view(int w, int h, float x, float y, float z)
-{
-    const GLdouble H = 0.1 * w / h / z;
-    const GLdouble V = 0.1         / z;
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glFrustum(-H, +H, -V, +V, 0.1, 5.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glRotated(180.0 * y -  90.0, 1.0, 0.0, 0.0);
-    glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
-}
-
-#if 0
-/* Apply transformation matrices for rendering cube map side I to an image    */
-/* with width and height S.                                                   */
-
-static void transform_cube(int s, int i)
-{
-}
-
-/* Apply transformation matrices for rendering a full-dome map to an image    */
-/* with width and height S.                                                   */
-
-static void transform_dome(int s)
-{
-}
-
-/* Apply transformation matrices for rendering a sphere map in an image with  */
-/* width and height S.                                                        */
-
-static void transform_sphere(int s)
-{
-}
-#endif
-
-/*----------------------------------------------------------------------------*/
-
 static void draw_sphere_accum(lightprobe *L, image *I, GLfloat s)
 {
     if (I->texture)
@@ -1061,6 +1045,7 @@ static void draw_sphere_accum(lightprobe *L, image *I, GLfloat s)
 
         UNIFORM1I(L->accum_prog, "image",    0);
         UNIFORM1F(L->accum_prog, "saturate", s);
+        UNIFORM1F(L->accum_prog, "modulate", 0);
         UNIFORM1F(L->accum_prog, "circle_r", I->values[LP_CIRCLE_RADIUS]);
         UNIFORM2F(L->accum_prog, "circle_p", I->values[LP_CIRCLE_X],
                                              I->values[LP_CIRCLE_Y]);
@@ -1080,6 +1065,26 @@ static void draw_sphere_accum(lightprobe *L, image *I, GLfloat s)
     }
 }
 
+static void draw_sphere_grid(lightprobe *L)
+{
+    glUseProgram(L->accum_prog);
+
+    UNIFORM1F(L->accum_prog, "modulate", 1.0f);
+
+    glEnable(GL_LINE_SMOOTH);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    {
+        glLineWidth(0.25f);
+        draw_object(GL_QUADS, L->vert_buff, L->quad_buff, 4 * L->r     * L->c);
+        glLineWidth(1.00f);
+        draw_object(GL_LINES, L->vert_buff, L->line_buff, 8 * L->r + 2 * L->c);
+    }
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
 static void draw_sphere_final(lightprobe *L, GLfloat e)
 {
     glUseProgram(L->final_prog);
@@ -1089,6 +1094,7 @@ static void draw_sphere_final(lightprobe *L, GLfloat e)
     UNIFORM1I(L->final_prog, "image",    0);
     UNIFORM1F(L->final_prog, "exposure", e);
 
+    glBlendFunc(GL_ONE, GL_ZERO);
     glBegin(GL_QUADS);
     {
         glVertex2i(-1, -1);
@@ -1097,26 +1103,6 @@ static void draw_sphere_final(lightprobe *L, GLfloat e)
         glVertex2i(-1, +1);
     }
     glEnd();
-}
-
-static void draw_sphere_grid(lightprobe *L)
-{
-    glUseProgram(0);
-
-    glEnable(GL_LINE_SMOOTH);
-
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
-
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    {
-        glLineWidth(0.5f);
-        draw_object(GL_QUADS, L->vert_buff, L->quad_buff, 4 * L->r     * L->c);
-        glLineWidth(2.0f);
-        draw_object(GL_LINES, L->vert_buff, L->line_buff, 8 * L->r + 2 * L->c);
-    }
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
@@ -1158,14 +1144,23 @@ static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
 void lp_render_sphere(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
+    const GLdouble H = 0.1 * w / h / z;
+    const GLdouble V = 0.1         / z;
+
     assert(L);
 
-    glViewport(0, 0, w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glFrustum(-H, +H, -V, +V, 0.1, 5.0);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glRotated(180.0 * y -  90.0, 1.0, 0.0, 0.0);
+    glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
 
     lp_set_program(L, LP_RENDER_VIEW, f);
-    lp_set_buffer (L, w, h);
-
-    transform_view(w, h, x, y, z);
+    lp_set_buffer(L, w, h);
+    glViewport(0, 0, w, h);
 
     draw_sphere(0, L, f, e);
 }
@@ -1174,13 +1169,24 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
 
 int lp_export_cube(lightprobe *L, const char *path, int s, int f)
 {
-    printf("Export Cube Map %s\n", path);
     return 1;
 }
 
 int lp_export_dome(lightprobe *L, const char *path, int s, int f)
 {
-    printf("Export Dome Map %s\n", path);
+    framebuffer image;
+
+    init_framebuffer(&image, s, s);
+    {
+        lp_set_program(L, LP_RENDER_DOME, f);
+        lp_set_buffer(L, s, s);
+        glViewport(0, 0, s, s);
+
+        draw_sphere(image.frame, L, f, 1.0);
+    }
+    save_framebuffer(&image, s, s, path);
+    free_framebuffer(&image);
+
     return 1;
 }
 
@@ -1193,15 +1199,16 @@ int lp_export_sphere(lightprobe *L, const char *path, int s, int f)
 
     init_framebuffer(&image, w, h);
     {
-        lp_set_program(L, LP_RENDER_VIEW, f);
-        lp_set_buffer (L, w, h);
+        lp_set_program(L, LP_RENDER_RECT, f);
+        lp_set_buffer(L, w, h);
+        glViewport(0, 0, w, h);
 
         draw_sphere(image.frame, L, f, 1.0);
     }
+    save_framebuffer(&image, w, h, path);
     free_framebuffer(&image);
 
     return 1;
 }
 
 /*----------------------------------------------------------------------------*/
-

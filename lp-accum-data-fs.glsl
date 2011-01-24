@@ -8,6 +8,7 @@ uniform vec2          circle_p;
 uniform float         circle_r;
 uniform float         exposure;
 uniform float         saturate;
+uniform float         modulate;
 
 /*----------------------------------------------------------------------------*/
 
@@ -40,7 +41,8 @@ void main()
     vec4  c = texture2DRect(image, p);
     float a = max(saturate, c.a * d);
 
-    gl_FragColor = vec4(c.rgb * a, a);
+    gl_FragColor = mix(vec4(c.rgb * a, a),
+                       vec4(0.0, 0.0, 0.0, 1.0), modulate);
 }
 
 /*----------------------------------------------------------------------------*/

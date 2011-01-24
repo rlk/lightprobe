@@ -9,6 +9,8 @@ void main()
                   gl_TextureMatrix[0][2].xyz);
     N = M * gl_Vertex.xyz;
     T = M * gl_Normal.xyz;
-    gl_Position = ftransform();
+
+    gl_Position = vec4(-2.0 * gl_MultiTexCoord0.x + 1.0,
+                        2.0 * gl_MultiTexCoord0.y - 1.0, 0.0, 1.0);
 }
 

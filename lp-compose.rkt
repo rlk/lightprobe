@@ -61,8 +61,6 @@
 
   (define lp-init
     (gl-ffi "lp_init" (_fun          -> _pointer)))
-  (define lp-tilt
-    (gl-ffi "lp_tilt" (_fun _pointer -> _void)))
   (define lp-free
     (gl-ffi "lp_free" (_fun _pointer -> _void)))
 
@@ -425,12 +423,6 @@
                    (init-file))
             (notify)))
 
-      ; Tilt
-
-      (define/public (tilt-file)
-        (lp-tilt lightprobe)
-        (notify))
-
       ; Access the current image descriptor.
 
       (define/public (set-current i)
@@ -450,7 +442,7 @@
       (init-field save-file)
       (init-field load-file)
       (init-field init-file)
-      (init-field tilt-file)
+      (init-field get-flags)
       (init-field goto)
       (init-field notify)
 
@@ -502,25 +494,19 @@
 
         (define (do-export-cube control event)
           (let ((path (put-file)))
-            (if path (lp-export-cube   lightprobe path 1024 0) #f)))
+            (if path (lp-export-cube   lightprobe path 1024 (get-flags)) #f)))
 
         ;; File / Export Dome...
 
         (define (do-export-dome control event)
           (let ((path (put-file)))
-            (if path (lp-export-dome   lightprobe path 1024 0) #f)))
+            (if path (lp-export-dome   lightprobe path 1024 (get-flags)) #f)))
 
         ;; File / Export Sphere...
 
         (define (do-export-sphere control event)
           (let ((path (put-file)))
-            (if path (lp-export-sphere lightprobe path 1024 0) #f)))
-
-        ;; ---------------------------------------------------------------------
-        ;; File / Tilt
-
-        (define (do-tilt control event)
-          (tilt-file))
+            (if path (lp-export-sphere lightprobe path 1024 (get-flags)) #f)))
 
         ;; ---------------------------------------------------------------------
 
@@ -560,14 +546,7 @@
                         [label "Export Sphere Map..."]
                         [callback do-export-sphere]
                         [shortcut #\e]
-                        [shortcut-prefix (get-optional-shortcut-prefix)])
-
-        (new separator-menu-item% [parent file]) ; -----------------------------
-
-        (new menu-item% [parent file]
-                        [label "Tilt"]
-                        [callback do-tilt]
-                        [shortcut #\t]))
+                        [shortcut-prefix (get-optional-shortcut-prefix)]))
 
       ;; -----------------------------------------------------------------------
       ;; View Menu
@@ -690,10 +669,8 @@
       (init-field get-zoom)
       (init-field get-expo)
       (init-field get-image)
+      (init-field get-flags)
       (init-field mode?)
-      (init-field grid?)
-      (init-field reso?)
-      (init-field all?)
 
       (super-new [style '(gl hscroll vscroll no-autoclear)])
 
@@ -872,21 +849,18 @@
       ; proper render function for the current view mode.
 
       (define/override (on-paint)
-        (let ((x (get-x))
-              (y (get-y))
-              (w (send this get-width))
-              (h (send this get-height))
-              (e (get-expo))
-              (z (get-zoom))
-              (f (bitwise-ior (if (grid?) lp-render-grid 0)
-                              (if (reso?) lp-render-res  0)
-                              (if (all?)  lp-render-all  0))))
+        (let-values (((w h) (send this get-client-size)))
+          (let ((x (get-x))
+                (y (get-y))
+                (e (get-expo))
+                (z (get-zoom))
+                (f (get-flags)))
 
-          (if (mode?)
-            (lp-render-circle lightprobe f w h x y e z)
-            (lp-render-sphere lightprobe f w h x y e z))
+            (if (mode?)
+                (lp-render-circle lightprobe f w h x y e z)
+                (lp-render-sphere lightprobe f w h x y e z))
 
-          (with-gl-context (lambda () (swap-gl-buffers)))))
+            (with-gl-context (lambda () (swap-gl-buffers))))))
 
       ; OpenGL use must wait until the canvas has been shown and the context
       ; created. Do all lightprobe and image state initialization here. Load
@@ -939,7 +913,7 @@
              [save-file (lambda (path) (send images save-file path))]
              [load-file (lambda (path) (send images load-file path))]
              [init-file (lambda ()     (send images init-file))]
-             [tilt-file (lambda ()     (send images tilt-file))]
+             [get-flags (lambda ()     (get-flags))]
              [goto      (lambda (i)    (send images set-current i))]
              [notify    (lambda ()     (send canvas reshape))]))
 
@@ -953,10 +927,8 @@
              [get-zoom  (lambda ()     (send values get-zoom))]
              [get-expo  (lambda ()     (send values get-expo))]
              [get-image (lambda ()     (send images get-current))]
-             [mode?     (lambda ()     (send menus  mode?))]
-             [reso?     (lambda ()     (send menus  reso?))]
-             [grid?     (lambda ()     (send menus  grid?))]
-             [all?      (lambda ()     (send values all?))]))
+             [get-flags (lambda ()     (get-flags))]
+             [mode?     (lambda ()     (send menus  mode?))]))
 
       (define images
         (new image-list%
@@ -966,7 +938,12 @@
       (define values
         (new view-values%
              [parent bot]
-             [notify (lambda () (send canvas reshape))]))))
+             [notify (lambda () (send canvas reshape))]))
+
+      (define (get-flags)
+        (bitwise-ior (if (send menus grid?) lp-render-grid 0)
+                     (if (send menus reso?) lp-render-res  0)
+                     (if (send values all?) lp-render-all  0)))))
   
   ;;----------------------------------------------------------------------------
 
