@@ -289,43 +289,15 @@ static GLuint load_texture(const char *path, int *w, int *h)
 
 /*----------------------------------------------------------------------------*/
 
-static char *load_txt(const char *name)
+/* Check the shader compile status.  If failed, print the log.                */
+
+static int check_shader_log(GLuint shader, const unsigned char *glsl)
 {
-    /* Load the named file into a newly-allocated buffer. */
+    const char *type = (shader == GL_VERTEX_SHADER) ? "vertex" : "fragment";
 
-    FILE *fp = 0;
-    void  *p = 0;
-    size_t n = 0;
-
-    if ((fp = fopen(name, "rb")))
-    {
-        if (fseek(fp, 0, SEEK_END) == 0)
-        {
-            if ((n = (size_t) ftell(fp)))
-            {
-                if (fseek(fp, 0, SEEK_SET) == 0)
-                {
-                    if ((p = calloc(n + 1, 1)))
-                    {
-                        fread(p, 1, n, fp);
-                    }
-                }
-            }
-        }
-        fclose(fp);
-    }
-    return p;
-}
-
-/*----------------------------------------------------------------------------*/
-
-static int check_shader_log(GLuint shader, const char *path)
-{
     GLchar *p = 0;
     GLint   s = 0;
     GLint   n = 0;
-
-    /* Check the shader compile status.  If failed, print the log. */
 
     glGetShaderiv(shader, GL_COMPILE_STATUS,  &s);
     glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &n);
@@ -336,8 +308,7 @@ static int check_shader_log(GLuint shader, const char *path)
         {
             glGetShaderInfoLog(shader, n, NULL, p);
 
-            fprintf(stderr, "%s: OpenGL %s Shader Error:\n%s", path,
-                   (shader == GL_VERTEX_SHADER) ? "Vertex" : "Fragment", p);
+            fprintf(stderr, "OpenGL %s shader error:\n%s\n%s", type, p, glsl);
             free(p);
         }
         return 0;
@@ -345,14 +316,13 @@ static int check_shader_log(GLuint shader, const char *path)
     return 1;
 }
 
-static int check_program_log(GLuint program, const char *vert_path,
-                                             const char *frag_path)
+/* Check the program link status.  If failed, print the log.                  */
+
+static int check_program_log(GLuint program)
 {
     GLchar *p = 0;
     GLint   s = 0;
     GLint   n = 0;
-
-    /* Check the program link status.  If failed, print the log. */
 
     glGetProgramiv(program, GL_LINK_STATUS,     &s);
     glGetProgramiv(program, GL_INFO_LOG_LENGTH, &n);
@@ -363,8 +333,7 @@ static int check_program_log(GLuint program, const char *vert_path,
         {
             glGetProgramInfoLog(program, n, NULL, p);
 
-            fprintf(stderr, "OpenGL Linker Error:\n\t%s\n\t%s\n%s",
-                    vert_path, frag_path, p);
+            fprintf(stderr, "OpenGL program linker error:\n%s", p);
             free(p);
         }
         return 0;
@@ -374,72 +343,48 @@ static int check_program_log(GLuint program, const char *vert_path,
 
 /*----------------------------------------------------------------------------*/
 
-/* Prepare a GLSL shader, taking it from source coude to usable GL object.    */
-/* Receive the shader's type and source path.  Load and compile it.  Report   */
-/* any errors in the log, and return 0 on failure.                            */
+/* Prepare a GLSL shader, taking it from source code to usable GL object.     */
+/* Report any errors in the log, and return 0 on failure.                     */
 
-static GLuint load_shader(GLenum type, const char *path)
+static GLuint load_shader(GLenum type, const unsigned char *str,
+                                             unsigned int   len)
 {
-    /* Load the named shader source file. */
+    /* Compile a new shader with the given source. */
 
-    GLchar *text;
+    GLuint shader = glCreateShader(type);
 
-    if ((text = load_txt(path)))
-    {
-        /* Compile a new shader with the given source. */
+    glShaderSource (shader, 1, (const GLchar **) &str,
+                               (const GLint   *) &len);
+    glCompileShader(shader);
 
-        GLuint shader = glCreateShader(type);
+    /* If the shader is valid, return it.  Else, delete it. */
 
-        glShaderSource (shader, 1, (const GLchar **) &text, NULL);
-        glCompileShader(shader);
+    if (check_shader_log(shader, str))
+        return shader;
+    else
+        glDeleteShader(shader);
 
-        free(text);
-
-        /* If the shader is valid, return it.  Else, delete it. */
-
-        if (check_shader_log(shader, path))
-            return shader;
-        else
-            glDeleteShader(shader);
-    }
     return 0;
 }
 
-/* Prepare a GLSL program, taking it all the way from source code to usable   */
-/* GL object.  Receive the path names of vertex and fragment program source   */
-/* files.  Read, compile, and link these into a GLSL program object, checking */
-/* logs and reporting any errors.  Clean up and return 0 on failure.          */
+/* Receive vertex and fragment shader objects. Link these into a GLSL program */
+/* object, checking logs and reporting any errors. Return 0 on failure.       */
 
-static GLuint load_program(const char *path_vert, const char *path_frag)
+static GLuint load_program(GLuint vert_shader, GLuint frag_shader)
 {
-    /* Load the shaders. */
+    GLuint program = glCreateProgram();
 
-    GLuint shader_vert = load_shader(GL_VERTEX_SHADER,   path_vert);
-    GLuint shader_frag = load_shader(GL_FRAGMENT_SHADER, path_frag);
+    glAttachShader(program, vert_shader);
+    glAttachShader(program, frag_shader);
 
-    /* Link them to a new program object. */
+    glLinkProgram(program);
 
-    if (shader_vert && shader_frag)
-    {
-        GLuint program = glCreateProgram();
+    /* If the program is valid, return it.  Else, delete it. */
 
-        glAttachShader(program, shader_vert);
-        glAttachShader(program, shader_frag);
-
-        glLinkProgram(program);
-
-        /* If the program is valid, return it.  Else, delete it. */
-
-        if (check_program_log(program, path_vert, path_frag))
-            return program;
-        else
-            glDeleteProgram(program);
-    }
-
-    /* Fail. */
-
-    glDeleteShader(shader_frag);
-    glDeleteShader(shader_vert);
+    if (check_program_log(program))
+        return program;
+    else
+        glDeleteProgram(program);
 
     return 0;
 }
@@ -553,6 +498,18 @@ static void free_framebuffer(framebuffer *F)
 /* all possible circumstances. When the mode, options, or operation changes,  */
 /* the program must change accordingly.                                       */
 
+#include "lp-accum-cube-vs.h"
+#include "lp-accum-dome-vs.h"
+#include "lp-accum-rect-vs.h"
+#include "lp-accum-view-vs.h"
+#include "lp-accum-data-fs.h"
+#include "lp-accum-reso-fs.h"
+#include "lp-final-data-fs.h"
+#include "lp-final-reso-fs.h"
+#include "lp-final-vs.h"
+#include "lp-image-vs.h"
+#include "lp-image-fs.h"
+
 enum
 {
     LP_RENDER_IMAGE = 0,
@@ -562,70 +519,81 @@ enum
     LP_RENDER_RECT  = 4,
 };
 
+static GLuint lp_accum_program(int m, int f)
+{
+    GLuint vs = 0;
+    GLuint fs = 0;
+
+    if (m == LP_RENDER_IMAGE)
+        return 0;
+
+    if (f & LP_RENDER_RES)
+        fs = load_shader(GL_FRAGMENT_SHADER, lp_accum_reso_fs_glsl,
+                                             lp_accum_reso_fs_glsl_len);
+    else
+        fs = load_shader(GL_FRAGMENT_SHADER, lp_accum_data_fs_glsl,
+                                             lp_accum_data_fs_glsl_len);
+    if (m == LP_RENDER_VIEW)
+        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_view_vs_glsl,
+                                             lp_accum_view_vs_glsl_len);
+    if (m == LP_RENDER_CUBE)
+        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_cube_vs_glsl,
+                                             lp_accum_cube_vs_glsl_len);
+    if (m == LP_RENDER_DOME)
+        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_dome_vs_glsl,
+                                             lp_accum_dome_vs_glsl_len);
+    if (m == LP_RENDER_RECT)
+        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_rect_vs_glsl,
+                                             lp_accum_rect_vs_glsl_len);
+
+    return load_program(vs, fs);
+}
+
+static GLuint lp_final_program(int m, int f)
+{
+    GLuint vs = 0;
+    GLuint fs = 0;
+
+    if (m == LP_RENDER_IMAGE)
+    {
+        vs = load_shader(GL_VERTEX_SHADER,   lp_image_vs_glsl,
+                                             lp_image_vs_glsl_len);
+        fs = load_shader(GL_FRAGMENT_SHADER, lp_image_fs_glsl,
+                                             lp_image_fs_glsl_len);
+    }
+    else
+    {
+        vs = load_shader(GL_VERTEX_SHADER,   lp_final_vs_glsl,
+                                             lp_final_vs_glsl_len);
+        if (f & LP_RENDER_RES)
+            fs = load_shader(GL_FRAGMENT_SHADER, lp_final_reso_fs_glsl,
+                                                 lp_final_reso_fs_glsl_len);
+        else
+            fs = load_shader(GL_FRAGMENT_SHADER, lp_final_data_fs_glsl,
+                                                 lp_final_data_fs_glsl_len);
+    }
+
+    return load_program(vs, fs);
+}
+
 static void lp_set_program(lightprobe *L, int m, int f)
 {
     /* If the mode or flags have changed... */
 
     if (m != L->prog_mode || f != L->prog_flag)
     {
-        char *accum_vert = 0;
-        char *accum_frag = 0;
-        char *final_vert = 0;
-        char *final_frag = 0;
-
-        /* Determine the shader source files for the current mode and flags. */
-
-        if (m == LP_RENDER_IMAGE)
-        {
-            final_vert = "lp-image.vert";
-            final_frag = "lp-image.frag";
-        }
-        else
-        {
-            final_vert = "lp-final.vert";
-
-            if (f & LP_RENDER_RES)
-            {
-                accum_frag = "lp-accum-reso.frag";
-                final_frag = "lp-final-reso.frag";
-            }
-            else
-            {
-                accum_frag = "lp-accum-data.frag";
-                final_frag = "lp-final-data.frag";
-            }
-
-            if (m == LP_RENDER_VIEW)
-                accum_vert = "lp-accum-view.vert";
-            if (m == LP_RENDER_CUBE)
-                accum_vert = "lp-accum-cube.vert";
-            if (m == LP_RENDER_DOME)
-                accum_vert = "lp-accum-dome.vert";
-            if (m == LP_RENDER_RECT)
-                accum_vert = "lp-accum-rect.vert";
-        }
+        L->prog_mode = m;
+        L->prog_flag = f;
 
         /* Release any previous program. */
 
-        if (L->accum_prog)
-            free_program(L->accum_prog);
-        if (L->final_prog)
-            free_program(L->final_prog);
+        if (L->accum_prog) free_program(L->accum_prog);
+        if (L->final_prog) free_program(L->final_prog);
 
         /* Load the new programs. */
 
-        if (accum_vert && accum_frag)
-            L->accum_prog = load_program(accum_vert, accum_frag);
-        else
-            L->accum_prog = 0;
-
-        if (final_vert && final_frag)
-            L->final_prog = load_program(final_vert, final_frag);
-        else
-            L->final_prog = 0;
-
-        L->prog_mode = m;
-        L->prog_flag = f;
+        L->accum_prog = lp_accum_program(m, f);
+        L->final_prog = lp_final_program(m, f);
     }
 }
 
