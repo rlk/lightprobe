@@ -100,11 +100,11 @@
   ;; Export
 
   (define lp-export-cube
-    (gl-ffi "lp_export_cube"   (_fun _pointer _path _int _int -> _bool)))
+    (gl-ffi "lp_export_cube"   (_fun _pointer _path _int _int -> _void)))
   (define lp-export-dome
-    (gl-ffi "lp_export_dome"   (_fun _pointer _path _int _int -> _bool)))
+    (gl-ffi "lp_export_dome"   (_fun _pointer _path _int _int -> _void)))
   (define lp-export-sphere
-    (gl-ffi "lp_export_sphere" (_fun _pointer _path _int _int -> _bool)))
+    (gl-ffi "lp_export_sphere" (_fun _pointer _path _int _int -> _void)))
 
   ;;----------------------------------------------------------------------------
   ;; Image value accessors

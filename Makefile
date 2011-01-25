@@ -18,15 +18,16 @@ endif
 
 OBJS= lp-render.o 
 
-GLSL=	lp-accum-cube-vs.glsl \
-	lp-accum-dome-vs.glsl \
-	lp-accum-rect-vs.glsl \
-	lp-accum-view-vs.glsl \
+GLSL=	lp-cube-vs.glsl \
+	lp-dome-vs.glsl \
+	lp-rect-vs.glsl \
+	lp-view-vs.glsl \
 	lp-accum-data-fs.glsl \
 	lp-accum-reso-fs.glsl \
+	lp-final-tone-fs.glsl \
 	lp-final-data-fs.glsl \
 	lp-final-reso-fs.glsl \
-	lp-final-vs.glsl \
+	lp-annot-fs.glsl \
 	lp-image-vs.glsl \
 	lp-image-fs.glsl
 

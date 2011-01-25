@@ -72,9 +72,14 @@ void lp_render_env(lightprobe *lp, int f, int W, int H, float e, float k,
 */
 /*----------------------------------------------------------------------------*/
 
-int lp_export_cube  (lightprobe *lp, const char *path, int s, int f);
-int lp_export_dome  (lightprobe *lp, const char *path, int s, int f);
-int lp_export_sphere(lightprobe *lp, const char *path, int s, int f);
+void lp_export_cube  (lightprobe *lp, const char *path, int s, int f);
+void lp_export_dome  (lightprobe *lp, const char *path, int s, int f);
+void lp_export_sphere(lightprobe *lp, const char *path, int s, int f);
+
+/*----------------------------------------------------------------------------*/
+
+unsigned int lp_load_texture(const char *path, int *w, int *h);
+unsigned int lp_load_cubemap(const char *path);
 
 /*----------------------------------------------------------------------------*/
 

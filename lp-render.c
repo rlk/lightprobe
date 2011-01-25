@@ -22,10 +22,9 @@
 
 /*----------------------------------------------------------------------------*/
 
-#define UNIFORM1I(p, s, i)          glUniform1i(glGetUniformLocation(p, s), i)
-#define UNIFORM1F(p, s, f)          glUniform1f(glGetUniformLocation(p, s), f)
-#define UNIFORM2F(p, s, a, b)       glUniform2f(glGetUniformLocation(p, s), a, b)
-#define UNIFORM4F(p, s, a, b, c, d) glUniform4f(glGetUniformLocation(p, s), a, b, c, d)
+#define UNIFORM1I(p, s, i)    glUniform1i(glGetUniformLocation(p, s), i)
+#define UNIFORM1F(p, s, f)    glUniform1f(glGetUniformLocation(p, s), f)
+#define UNIFORM2F(p, s, a, b) glUniform2f(glGetUniformLocation(p, s), a, b)
 
 /*----------------------------------------------------------------------------*/
 
@@ -68,11 +67,12 @@ struct lightprobe
 
     GLuint  accum_prog;
     GLuint  final_prog;
+    GLuint  annot_prog;
 
     /* Sphere vertex buffers. */
 
     GLuint  vert_buff;
-    GLuint  quad_buff;
+    GLuint  fill_buff;
     GLuint  line_buff;
 
     GLsizei r;
@@ -184,10 +184,46 @@ static void sync(int interval)
 
 /*----------------------------------------------------------------------------*/
 
+#include "srgb.h"
+
+/* Write the contents of an array buffers to a multi-page 4-channel 32-bit    */
+/* floating point TIFF image.                                                 */
+
+static void tifwriten(const char *path, int w, int h, int n, void **p)
+{
+    TIFF *T = 0;
+    
+    TIFFSetWarningHandler(0);
+
+    if ((T = TIFFOpen(path, "w")))
+    {
+        uint32 k, i, s;
+        
+        for (k = 0; k < n; ++k)
+        {
+            TIFFSetField(T, TIFFTAG_IMAGEWIDTH,      w);
+            TIFFSetField(T, TIFFTAG_IMAGELENGTH,     h);
+            TIFFSetField(T, TIFFTAG_BITSPERSAMPLE,  32);
+            TIFFSetField(T, TIFFTAG_SAMPLESPERPIXEL, 4);
+        
+            TIFFSetField(T, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_RGB);
+            TIFFSetField(T, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP);
+            TIFFSetField(T, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+            TIFFSetField(T, TIFFTAG_ICCPROFILE,   sRGB_icc_len, sRGB_icc);
+
+            s = (uint32) TIFFScanlineSize(T);
+
+            for (i = 0; i < h; ++i)
+                TIFFWriteScanline(T, (uint8 *) p[k] + (h - i - 1) * s, i, 0);
+
+            TIFFWriteDirectory(T);
+        }
+        TIFFClose(T);
+    }
+}
+
 /* Write the contents of a buffer to a 4-channel 32-bit floating point TIFF   */
 /* image.                                                                     */
-
-#include "srgb.h"
 
 static void tifwrite(const char *path, int w, int h, void *p)
 {
@@ -208,6 +244,7 @@ static void tifwrite(const char *path, int w, int h, void *p)
         TIFFSetField(T, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP);
         TIFFSetField(T, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
         TIFFSetField(T, TIFFTAG_ICCPROFILE,   sRGB_icc_len, sRGB_icc);
+
         s = (uint32) TIFFScanlineSize(T);
 
         for (i = 0; i < h; ++i)
@@ -220,7 +257,7 @@ static void tifwrite(const char *path, int w, int h, void *p)
 /* Load the contents of a TIFF image to a newly-allocated buffer.  Return the */
 /* buffer and its configuration.                                              */
 
-static void *tifread(const char *path, int *w, int *h, int *c, int *b)
+static void *tifread(const char *path, int n, int *w, int *h, int *c, int *b)
 {
     TIFF *T = 0;
     void *p = 0;
@@ -229,24 +266,27 @@ static void *tifread(const char *path, int *w, int *h, int *c, int *b)
     
     if ((T = TIFFOpen(path, "r")))
     {
-        uint32 i, s = (uint32) TIFFScanlineSize(T);
-        uint32 W, H;
-        uint16 B, C;
+        if ((n == 0) || TIFFSetDirectory(T, n))
+        {
+            uint32 i, s = (uint32) TIFFScanlineSize(T);
+            uint32 W, H;
+            uint16 B, C;
 
-        TIFFGetField(T, TIFFTAG_IMAGEWIDTH,      &W);
-        TIFFGetField(T, TIFFTAG_IMAGELENGTH,     &H);
-        TIFFGetField(T, TIFFTAG_BITSPERSAMPLE,   &B);
-        TIFFGetField(T, TIFFTAG_SAMPLESPERPIXEL, &C);
+            TIFFGetField(T, TIFFTAG_IMAGEWIDTH,      &W);
+            TIFFGetField(T, TIFFTAG_IMAGELENGTH,     &H);
+            TIFFGetField(T, TIFFTAG_BITSPERSAMPLE,   &B);
+            TIFFGetField(T, TIFFTAG_SAMPLESPERPIXEL, &C);
 
-        if ((p = malloc(H * s)))
-        {         
-            for (i = 0; i < H; ++i)
-                TIFFReadScanline(T, (uint8 *) p + i * s, i, 0);
+            if ((p = malloc(H * s)))
+            {         
+                for (i = 0; i < H; ++i)
+                    TIFFReadScanline(T, (uint8 *) p + i * s, i, 0);
 
-            *w = (int) W;
-            *h = (int) H;
-            *b = (int) B;
-            *c = (int) C;
+                *w = (int) W;
+                *h = (int) H;
+                *b = (int) B;
+                *c = (int) C;
+            }
         }
         TIFFClose(T);
     }
@@ -257,7 +297,7 @@ static void *tifread(const char *path, int *w, int *h, int *c, int *b)
 /* texture. Release the image buffer after loading, and return the texture    */
 /* object.                                                                    */
 
-static GLuint load_texture(const char *path, int *w, int *h)
+unsigned int lp_load_texture(const char *path, int *w, int *h)
 {
     const GLenum T = GL_TEXTURE_RECTANGLE_ARB;
 
@@ -267,7 +307,7 @@ static GLuint load_texture(const char *path, int *w, int *h)
     int c;
     int b;
 
-    if ((p = tifread(path, w, h, &c, &b)))
+    if ((p = tifread(path, 0, w, h, &c, &b)))
     {
         GLenum i = internal_form(b, c);
         GLenum e = external_form(c);
@@ -285,7 +325,55 @@ static GLuint load_texture(const char *path, int *w, int *h)
 
         free(p);
     }
-    return o;
+    return (unsigned int) o;
+}
+
+/* Load the named multi-page TIFF image into a 32-bit floating point OpenGL   */
+/* cube map. Release the image buffer after loading, and return the texture   */
+/* object.                                                                    */
+
+unsigned int lp_load_cubemap(const char *path)
+{
+    const GLenum T = GL_TEXTURE_CUBE_MAP;
+
+    static const GLenum targets[6] = {
+        GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
+    };
+
+    GLuint o = 0;
+    void  *p = 0;
+
+    int f, w, h, c, b;
+
+    glGenTextures(1, &o);
+    glBindTexture(T,  o);
+
+    glTexParameteri(T, GL_TEXTURE_WRAP_S,     GL_CLAMP);
+    glTexParameteri(T, GL_TEXTURE_WRAP_T,     GL_CLAMP);
+    glTexParameteri(T, GL_TEXTURE_WRAP_R,     GL_CLAMP);
+    glTexParameteri(T, GL_GENERATE_MIPMAP,    GL_TRUE);
+    glTexParameteri(T, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(T, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+    for (f = 0; f < 6; ++f)
+
+        if ((p = tifread(path, f, &w, &h, &c, &b)))
+        {
+            GLenum i = internal_form(b, c);
+            GLenum e = external_form(c);
+            GLenum t = external_type(b);
+
+            glTexImage2D(targets[f], 0, i, w, h, 0, e, t, p);
+
+            free(p);
+        }
+
+    return (unsigned int) o;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -368,25 +456,41 @@ static GLuint load_shader(GLenum type, const unsigned char *str,
     return 0;
 }
 
+/* Short-cut the shader type parameter to load_shader.                        */
+
+static GLuint load_vshader(const unsigned char *str, unsigned int len)
+{
+    return load_shader(GL_VERTEX_SHADER,   str, len);
+}
+
+static GLuint load_fshader(const unsigned char *str, unsigned int len)
+{
+    return load_shader(GL_FRAGMENT_SHADER, str, len);
+}
+
 /* Receive vertex and fragment shader objects. Link these into a GLSL program */
 /* object, checking logs and reporting any errors. Return 0 on failure.       */
 
 static GLuint load_program(GLuint vert_shader, GLuint frag_shader)
 {
-    GLuint program = glCreateProgram();
+    if (vert_shader && frag_shader)
+    {
+        /* Link a new program with the given shaders. */
 
-    glAttachShader(program, vert_shader);
-    glAttachShader(program, frag_shader);
+        GLuint program = glCreateProgram();
 
-    glLinkProgram(program);
+        glAttachShader(program, vert_shader);
+        glAttachShader(program, frag_shader);
 
-    /* If the program is valid, return it.  Else, delete it. */
+        glLinkProgram(program);
 
-    if (check_program_log(program))
-        return program;
-    else
-        glDeleteProgram(program);
+        /* If the program is valid, return it.  Else, delete it. */
 
+        if (check_program_log(program))
+            return program;
+        else
+            glDeleteProgram(program);
+    }
     return 0;
 }
 
@@ -491,24 +595,22 @@ static void free_framebuffer(framebuffer *F)
     glDeleteFramebuffers(1, &F->frame);
 }
 
-static void save_framebuffer(framebuffer *F, GLsizei w,
-                                             GLsizei h, const char *path)
+static void *read_framebuffer(framebuffer *F, GLsizei w, GLsizei h)
 {
+    GLubyte *p = 0;
+
     glBindFramebuffer(GL_FRAMEBUFFER, F->frame);
     {
-        GLubyte *p;
-
         if ((p = (GLubyte *) malloc(w * h * 4 * sizeof (GLfloat))))
         {
             glReadBuffer(GL_FRONT);
             glReadPixels(0, 0, w, h, GL_RGBA, GL_FLOAT, p);
             glReadBuffer(GL_BACK);
-
-            tifwrite(path, w, h, p);
-            free(p);
         }
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    return p;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -519,82 +621,90 @@ static void save_framebuffer(framebuffer *F, GLsizei w,
 /* all possible circumstances. When the mode, options, or operation changes,  */
 /* the program must change accordingly.                                       */
 
-#include "lp-accum-cube-vs.h"
-#include "lp-accum-dome-vs.h"
-#include "lp-accum-rect-vs.h"
-#include "lp-accum-view-vs.h"
+#include "lp-cube-vs.h"
+#include "lp-dome-vs.h"
+#include "lp-rect-vs.h"
+#include "lp-view-vs.h"
 #include "lp-accum-data-fs.h"
 #include "lp-accum-reso-fs.h"
+#include "lp-final-tone-fs.h"
 #include "lp-final-data-fs.h"
 #include "lp-final-reso-fs.h"
-#include "lp-final-vs.h"
+#include "lp-annot-fs.h"
 #include "lp-image-vs.h"
 #include "lp-image-fs.h"
 
 enum
 {
     LP_RENDER_IMAGE = 0,
-    LP_RENDER_VIEW  = 1,
-    LP_RENDER_CUBE  = 2,
-    LP_RENDER_DOME  = 3,
-    LP_RENDER_RECT  = 4,
+    LP_RENDER_CUBE  = 1,
+    LP_RENDER_DOME  = 2,
+    LP_RENDER_RECT  = 3,
+    LP_RENDER_VIEW  = 4,
 };
+
+static GLuint lp_choose_vshader(int m)
+{
+    switch (m)
+    {
+    case LP_RENDER_IMAGE:
+        return load_vshader(lp_image_vs_glsl, lp_image_vs_glsl_len);
+    case LP_RENDER_CUBE:
+        return load_vshader(lp_cube_vs_glsl,  lp_cube_vs_glsl_len);
+    case LP_RENDER_DOME:
+        return load_vshader(lp_dome_vs_glsl,  lp_dome_vs_glsl_len);
+    case LP_RENDER_RECT:
+        return load_vshader(lp_rect_vs_glsl,  lp_rect_vs_glsl_len);
+    case LP_RENDER_VIEW:
+        return load_vshader(lp_view_vs_glsl,  lp_view_vs_glsl_len);
+    }
+    return 0;
+}
 
 static GLuint lp_accum_program(int m, int f)
 {
-    GLuint vs = 0;
-    GLuint fs = 0;
-
     if (m == LP_RENDER_IMAGE)
         return 0;
-
-    if (f & LP_RENDER_RES)
-        fs = load_shader(GL_FRAGMENT_SHADER, lp_accum_reso_fs_glsl,
-                                             lp_accum_reso_fs_glsl_len);
     else
-        fs = load_shader(GL_FRAGMENT_SHADER, lp_accum_data_fs_glsl,
-                                             lp_accum_data_fs_glsl_len);
-    if (m == LP_RENDER_VIEW)
-        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_view_vs_glsl,
-                                             lp_accum_view_vs_glsl_len);
-    if (m == LP_RENDER_CUBE)
-        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_cube_vs_glsl,
-                                             lp_accum_cube_vs_glsl_len);
-    if (m == LP_RENDER_DOME)
-        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_dome_vs_glsl,
-                                             lp_accum_dome_vs_glsl_len);
-    if (m == LP_RENDER_RECT)
-        vs = load_shader(GL_VERTEX_SHADER,   lp_accum_rect_vs_glsl,
-                                             lp_accum_rect_vs_glsl_len);
+    {
+        GLuint fs = 0;
 
-    return load_program(vs, fs);
+        if (f & LP_RENDER_RES)
+            fs = load_fshader(lp_accum_reso_fs_glsl, lp_accum_reso_fs_glsl_len);
+        else
+            fs = load_fshader(lp_accum_data_fs_glsl, lp_accum_data_fs_glsl_len);
+
+        return load_program(lp_choose_vshader(m), fs);
+    }
 }
 
 static GLuint lp_final_program(int m, int f)
 {
-    GLuint vs = 0;
     GLuint fs = 0;
 
+    if      (m == LP_RENDER_IMAGE)
+        fs = load_fshader(lp_image_fs_glsl,      lp_image_fs_glsl_len);
+    else if (f &  LP_RENDER_RES)
+        fs = load_fshader(lp_final_reso_fs_glsl, lp_final_reso_fs_glsl_len);
+    else if (m == LP_RENDER_VIEW)
+        fs = load_fshader(lp_final_tone_fs_glsl, lp_final_tone_fs_glsl_len);
+    else
+        fs = load_fshader(lp_final_data_fs_glsl, lp_final_data_fs_glsl_len);
+
+    return load_program(lp_choose_vshader(m), fs);
+}
+
+static GLuint lp_annot_program(int m, int f)
+{
     if (m == LP_RENDER_IMAGE)
-    {
-        vs = load_shader(GL_VERTEX_SHADER,   lp_image_vs_glsl,
-                                             lp_image_vs_glsl_len);
-        fs = load_shader(GL_FRAGMENT_SHADER, lp_image_fs_glsl,
-                                             lp_image_fs_glsl_len);
-    }
+        return 0;
     else
     {
-        vs = load_shader(GL_VERTEX_SHADER,   lp_final_vs_glsl,
-                                             lp_final_vs_glsl_len);
-        if (f & LP_RENDER_RES)
-            fs = load_shader(GL_FRAGMENT_SHADER, lp_final_reso_fs_glsl,
-                                                 lp_final_reso_fs_glsl_len);
-        else
-            fs = load_shader(GL_FRAGMENT_SHADER, lp_final_data_fs_glsl,
-                                                 lp_final_data_fs_glsl_len);
-    }
+        GLuint vs = lp_choose_vshader(m);
+        GLuint fs = load_fshader(lp_annot_fs_glsl, lp_annot_fs_glsl_len);
 
-    return load_program(vs, fs);
+        return load_program(vs, fs);
+    }
 }
 
 static void lp_set_program(lightprobe *L, int m, int f)
@@ -610,11 +720,13 @@ static void lp_set_program(lightprobe *L, int m, int f)
 
         if (L->accum_prog) free_program(L->accum_prog);
         if (L->final_prog) free_program(L->final_prog);
+        if (L->annot_prog) free_program(L->annot_prog);
 
         /* Load the new programs. */
 
         L->accum_prog = lp_accum_program(m, f);
         L->final_prog = lp_final_program(m, f);
+        L->annot_prog = lp_annot_program(m, f);
     }
 }
 
@@ -638,10 +750,10 @@ static void lp_set_buffer(lightprobe *L, int w, int h)
 /* vector for each vertex, noting that position is trivially derived from     */
 /* normal.                                                                    */
 
-static void make_sphere(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
+static void make_sphere(GLuint vb, GLuint fb, GLuint lb, GLsizei r, GLsizei c)
 {
     GLfloat *v = 0;
-    GLshort *q = 0;
+    GLshort *f = 0;
     GLshort *l = 0;
 
     GLsizei i;
@@ -650,7 +762,7 @@ static void make_sphere(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
     /* Compute the buffer sizes. */
 
     const GLsizei vn = 8 * sizeof (GLfloat) * (r + 1) * (c + 1);
-    const GLsizei qn = 4 * sizeof (GLshort) * (    r * c);
+    const GLsizei fn = 4 * sizeof (GLshort) * (    r * c);
     const GLsizei ln = 2 * sizeof (GLshort) * (4 * r + c);
 
     /* Compute the vertex normal, tangent, and spherical coordinate. */
@@ -682,18 +794,18 @@ static void make_sphere(GLuint vb, GLuint qb, GLuint lb, GLsizei r, GLsizei c)
 
     /* Compute the face indices. */
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, qb);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, qn, 0, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fb);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, fn, 0, GL_STATIC_DRAW);
 
-    if ((q = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY)))
+    if ((f = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY)))
     {
         for     (i = 0; i <  r; i++)
             for (j = 0; j <  c; j++)
             {
-                *q++ = (GLushort) ((i    ) * (c + 1) + (j    ));
-                *q++ = (GLushort) ((i + 1) * (c + 1) + (j    ));
-                *q++ = (GLushort) ((i + 1) * (c + 1) + (j + 1));
-                *q++ = (GLushort) ((i    ) * (c + 1) + (j + 1));
+                *f++ = (GLushort) ((i    ) * (c + 1) + (j    ));
+                *f++ = (GLushort) ((i + 1) * (c + 1) + (j    ));
+                *f++ = (GLushort) ((i + 1) * (c + 1) + (j + 1));
+                *f++ = (GLushort) ((i    ) * (c + 1) + (j + 1));
             }
         glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
     }
@@ -770,27 +882,29 @@ static void gl_init(lightprobe *L, GLsizei r, GLsizei c)
     /* Generate and initialize vertex buffer objects. */
 
     glGenBuffers(1, &L->vert_buff);
-    glGenBuffers(1, &L->quad_buff);
+    glGenBuffers(1, &L->fill_buff);
     glGenBuffers(1, &L->line_buff);
 
     L->r = r;
     L->c = c;
-    make_sphere(L->vert_buff, L->quad_buff, L->line_buff, L->r, L->c);
+    make_sphere(L->vert_buff, L->fill_buff, L->line_buff, L->r, L->c);
 }
 
 static void gl_free(lightprobe *L)
 {
     glDeleteBuffers(1, &L->vert_buff);
-    glDeleteBuffers(1, &L->quad_buff);
+    glDeleteBuffers(1, &L->fill_buff);
     glDeleteBuffers(1, &L->line_buff);
 
     free_framebuffer(&L->accum);
 
     if (L->accum_prog) free_program(L->accum_prog);
     if (L->final_prog) free_program(L->final_prog);
+    if (L->annot_prog) free_program(L->annot_prog);
 
     L->accum_prog = 0;
     L->final_prog = 0;
+    L->annot_prog = 0;
 
     L->w = 0;
     L->h = 0;
@@ -856,7 +970,7 @@ int lp_add_image(lightprobe *L, const char *path)
 
     /* Load the texture. */
 
-    if ((o = load_texture(path, &w, &h)))
+    if ((o = lp_load_texture(path, &w, &h)))
     {
         /* Find the lightprobe's first unused image slot. */
 
@@ -1035,55 +1149,41 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 
 /*----------------------------------------------------------------------------*/
 
+/* Render the given lightprobe image to the accumulation buffer with a blend  */
+/* function of one-one. Use the image's unwrapped per-pixel quality as the    */
+/* alpha value, and write pre-multiplied color. The result is a weighted sum  */
+/* of images, with the total weight in the alpha channel.                     */
+
 static void draw_sphere_accum(lightprobe *L, image *I, GLfloat s)
-{
-    if (I->texture)
-    {
-        glUseProgram(L->accum_prog);
-
-        glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
-
-        UNIFORM1I(L->accum_prog, "image",    0);
-        UNIFORM1F(L->accum_prog, "saturate", s);
-        UNIFORM1F(L->accum_prog, "modulate", 0);
-        UNIFORM1F(L->accum_prog, "circle_r", I->values[LP_CIRCLE_RADIUS]);
-        UNIFORM2F(L->accum_prog, "circle_p", I->values[LP_CIRCLE_X],
-                                             I->values[LP_CIRCLE_Y]);
-
-        glMatrixMode(GL_TEXTURE);
-        {
-            glLoadIdentity();
-            glRotatef(I->values[LP_SPHERE_ROLL],       0.0f, 0.0f, 1.0f);
-            glRotatef(I->values[LP_SPHERE_ELEVATION], -1.0f, 0.0f, 0.0f);
-            glRotatef(I->values[LP_SPHERE_AZIMUTH],    0.0f, 1.0f, 0.0f);
-        }
-        glMatrixMode(GL_MODELVIEW);
-
-        glBlendFunc(GL_ONE, GL_ONE);
-
-        draw_object(GL_QUADS, L->vert_buff, L->quad_buff, 4 * L->r * L->c);
-    }
-}
-
-static void draw_sphere_grid(lightprobe *L)
 {
     glUseProgram(L->accum_prog);
 
-    UNIFORM1F(L->accum_prog, "modulate", 1.0f);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
 
-    glEnable(GL_LINE_SMOOTH);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    UNIFORM1I(L->accum_prog, "image",    0);
+    UNIFORM1F(L->accum_prog, "saturate", s);
+    UNIFORM1F(L->accum_prog, "circle_r", I->values[LP_CIRCLE_RADIUS]);
+    UNIFORM2F(L->accum_prog, "circle_p", I->values[LP_CIRCLE_X],
+                                         I->values[LP_CIRCLE_Y]);
 
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glMatrixMode(GL_TEXTURE);
     {
-        glLineWidth(0.25f);
-        draw_object(GL_QUADS, L->vert_buff, L->quad_buff, 4 * L->r     * L->c);
-        glLineWidth(1.00f);
-        draw_object(GL_LINES, L->vert_buff, L->line_buff, 8 * L->r + 2 * L->c);
+        glLoadIdentity();
+        glRotatef(I->values[LP_SPHERE_ROLL],       0.0f, 0.0f, 1.0f);
+        glRotatef(I->values[LP_SPHERE_ELEVATION], -1.0f, 0.0f, 0.0f);
+        glRotatef(I->values[LP_SPHERE_AZIMUTH],    0.0f, 1.0f, 0.0f);
     }
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glMatrixMode(GL_MODELVIEW);
+
+    glBlendFunc(GL_ONE, GL_ONE);
+    draw_object(GL_QUADS, L->vert_buff, L->fill_buff, 4 * L->r * L->c);
 }
+
+/* Render the accumulation buffer to the output buffer. Divide the RGB color  */
+/* by its alpha value, normalizing the weighted sum that resulted from the    */
+/* accumulation of images previously, and giving the final quality-blended    */
+/* blend of inputs. If we're rendering to the screen, then apply an exposure  */
+/* mapping.                                                                   */
 
 static void draw_sphere_final(lightprobe *L, GLfloat e)
 {
@@ -1095,21 +1195,32 @@ static void draw_sphere_final(lightprobe *L, GLfloat e)
     UNIFORM1F(L->final_prog, "exposure", e);
 
     glBlendFunc(GL_ONE, GL_ZERO);
-    glBegin(GL_QUADS);
+    draw_object(GL_QUADS, L->vert_buff, L->fill_buff, 4 * L->r * L->c);
+}
+
+static void draw_sphere_grid(lightprobe *L)
+{
+    glUseProgram(L->annot_prog);
+
+    glEnable(GL_LINE_SMOOTH);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     {
-        glVertex2i(-1, -1);
-        glVertex2i(+1, -1);
-        glVertex2i(+1, +1);
-        glVertex2i(-1, +1);
+        glLineWidth(0.25f);
+        draw_object(GL_QUADS, L->vert_buff, L->fill_buff, 4 * L->r     * L->c);
+        glLineWidth(2.00f);
+        draw_object(GL_LINES, L->vert_buff, L->line_buff, 8 * L->r + 2 * L->c);
     }
-    glEnd();
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
 {
     glEnable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
 
+    glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
 
     /* Render any/all images to the accumulation buffer. */
@@ -1121,7 +1232,8 @@ static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
     {
         int i;
         for (i = 0; i < LP_MAX_IMAGE; i++)
-            draw_sphere_accum(L, L->images + i, 0.0);
+            if (L->images[i].texture)
+                draw_sphere_accum(L, L->images + i, 0.0);
     }
     else
         draw_sphere_accum(L, L->images + L->select, 1.0);
@@ -1144,10 +1256,14 @@ static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
 void lp_render_sphere(lightprobe *L, int f, int w, int h,
                       float x, float y, float e, float z)
 {
+    /* Compute the frustum parameters. */
+
     const GLdouble H = 0.1 * w / h / z;
     const GLdouble V = 0.1         / z;
 
     assert(L);
+
+    /* Apply the view transformation. */
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -1158,6 +1274,8 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
     glRotated(180.0 * y -  90.0, 1.0, 0.0, 0.0);
     glRotated(360.0 * x - 180.0, 0.0, 1.0, 0.0);
 
+    /* Update the program and buffer caches.  Render the sphere. */
+
     lp_set_program(L, LP_RENDER_VIEW, f);
     lp_set_buffer(L, w, h);
     glViewport(0, 0, w, h);
@@ -1167,48 +1285,155 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
 
 /*----------------------------------------------------------------------------*/
 
-int lp_export_cube(lightprobe *L, const char *path, int s, int f)
+static void transform_pos_x(void)
 {
-    return 1;
+    glScaled(-1.0, 1.0, 1.0);
+    glRotated(+90.0, 0.0, 1.0, 0.0);
 }
 
-int lp_export_dome(lightprobe *L, const char *path, int s, int f)
+static void transform_neg_x(void)
 {
-    framebuffer image;
+    glScaled(-1.0, 1.0, 1.0);
+    glRotated(-90.0, 0.0, 1.0, 0.0);
+}
 
-    init_framebuffer(&image, s, s);
+static void transform_pos_y(void)
+{
+    glScaled(-1.0, 1.0, 1.0);
+    glRotated(-90.0, 1.0, 0.0, 0.0); 
+    glRotated(180.0, 0.0, 1.0, 0.0);
+}
+
+static void transform_neg_y(void)
+{
+    glScaled(-1.0, 1.0, 1.0);
+    glRotated(+90.0, 1.0, 0.0, 0.0);
+    glRotated(180.0, 0.0, 1.0, 0.0); 
+}
+
+static void transform_pos_z(void)
+{
+    glScaled(-1.0, 1.0, 1.0);
+    glRotated(180.0, 0.0, 1.0, 0.0);
+}
+
+static void transform_neg_z(void)
+{
+    glScaled(-1.0, 1.0, 1.0);
+}
+
+typedef void (*transform_func)(void);
+
+/*----------------------------------------------------------------------------*/
+
+void lp_export_cube(lightprobe *L, const char *path, int s, int f)
+{
+    transform_func transform[6] = {
+        transform_pos_x,
+        transform_neg_x,
+        transform_pos_y,
+        transform_neg_y,
+        transform_pos_z,
+        transform_neg_z
+    };
+    GLfloat color[6][3] = {
+        { 1.0f, 0.0f, 0.0f },
+        { 1.0f, 0.0f, 1.0f },
+        { 0.0f, 1.0f, 0.0f },
+        { 1.0f, 1.0f, 0.0f },
+        { 0.0f, 0.0f, 1.0f },
+        { 0.0f, 1.0f, 1.0f }
+    };
+
+    framebuffer export;
+    void       *pixels[6];
+    int i;
+
+    /* Update the program and buffer caches. */
+
+    lp_set_program(L, LP_RENDER_CUBE, f);
+    lp_set_buffer (L, s, s);
+
+    init_framebuffer(&export, s, s);
     {
-        lp_set_program(L, LP_RENDER_DOME, f);
-        lp_set_buffer(L, s, s);
+        GLfloat d = 0.25;
+
         glViewport(0, 0, s, s);
 
-        draw_sphere(image.frame, L, f, 1.0);
-    }
-    save_framebuffer(&image, s, s, path);
-    free_framebuffer(&image);
+        for (i = 0; i < 6; ++i)
+        {
+            /* Apply the view transformation and render the sphere. */
 
-    return 1;
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            glFrustum(-d, +d, -d, +d, d, 5.0);
+
+            glMatrixMode(GL_MODELVIEW);
+            glLoadIdentity();
+            transform[i]();
+/*
+            glBindFramebuffer(GL_FRAMEBUFFER, export.frame);
+            glClearColor(color[i][0], color[i][1], color[i][2], 1.0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+*/
+            draw_sphere(export.frame, L, f, 0);
+
+            /* Copy the output to a buffer. */
+
+            pixels[i] = read_framebuffer(&export, s, s);
+        }
+    }
+    free_framebuffer(&export);
+
+    /* Write the buffers to a file and release them. */
+
+    tifwriten(path, s, s, 6, pixels);
+
+    for (i = 0; i < 6; ++i)
+        free(pixels[i]);
 }
 
-int lp_export_sphere(lightprobe *L, const char *path, int s, int f)
+/*----------------------------------------------------------------------------*/
+
+static void lp_export(lightprobe *L,
+                      const char *path, int m, int w, int h, int f)
 {
-    const int w = 2 * s;
-    const int h =     s;
+    framebuffer export;
+    void       *pixels;
 
-    framebuffer image;
+    /* Update the program and buffer caches. */
 
-    init_framebuffer(&image, w, h);
+    lp_set_program(L, m, f);
+    lp_set_buffer (L, w, h);
+
+    /* Initialize the export framebuffer. */
+
+    init_framebuffer(&export, w, h);
     {
-        lp_set_program(L, LP_RENDER_RECT, f);
-        lp_set_buffer(L, w, h);
+        /* Render the sphere. */
+
         glViewport(0, 0, w, h);
+        draw_sphere(export.frame, L, f, 1.0);
 
-        draw_sphere(image.frame, L, f, 1.0);
+        /* Copy the output to a buffer and write the buffer to a file. */
+
+        if ((pixels = read_framebuffer(&export, w, h)))
+        {
+            tifwrite(path, w, h, pixels);
+            free(pixels);
+        }
     }
-    save_framebuffer(&image, w, h, path);
-    free_framebuffer(&image);
+    free_framebuffer(&export);
+}
 
-    return 1;
+void lp_export_dome(lightprobe *L, const char *path, int s, int f)
+{
+    lp_export(L, path, LP_RENDER_DOME, s, s, f);
+}
+
+void lp_export_sphere(lightprobe *L, const char *path, int s, int f)
+{
+    lp_export(L, path, LP_RENDER_RECT, 2 * s, s, f);
 }
 
 /*----------------------------------------------------------------------------*/
