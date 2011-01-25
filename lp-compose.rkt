@@ -100,11 +100,11 @@
   ;; Export
 
   (define lp-export-cube
-    (gl-ffi "lp_export_cube"   (_fun _pointer _path _int _int -> _void)))
+    (gl-ffi "lp_export_cube" (_fun _pointer _path _int _int -> _void)))
   (define lp-export-dome
-    (gl-ffi "lp_export_dome"   (_fun _pointer _path _int _int -> _void)))
-  (define lp-export-sphere
-    (gl-ffi "lp_export_sphere" (_fun _pointer _path _int _int -> _void)))
+    (gl-ffi "lp_export_dome" (_fun _pointer _path _int _int -> _void)))
+  (define lp-export-rect
+    (gl-ffi "lp_export_rect" (_fun _pointer _path _int _int -> _void)))
 
   ;;----------------------------------------------------------------------------
   ;; Image value accessors
@@ -490,23 +490,46 @@
                 (void))))
 
         ;; ---------------------------------------------------------------------
+
+        (define (get-size path)
+          (if path
+              (let ((dialog (new lp-export-dialog% [name (path->string path)])))
+                (send dialog show #t)
+                (send dialog get-value))
+              #f))
+
         ;; File / Export Cube...
 
         (define (do-export-cube control event)
-          (let ((path (put-file)))
-            (if path (lp-export-cube   lightprobe path 1024 (get-flags)) #f)))
+          (let* ((path (put-file))
+                 (size (get-size path)))
+            (if size (begin
+                       (begin-busy-cursor)
+                       (lp-export-cube lightprobe path size (get-flags))
+                       (end-busy-cursor))
+                (void))))
 
         ;; File / Export Dome...
 
         (define (do-export-dome control event)
-          (let ((path (put-file)))
-            (if path (lp-export-dome   lightprobe path 1024 (get-flags)) #f)))
+          (let* ((path (put-file))
+                 (size (get-size path)))
+            (if size (begin
+                       (begin-busy-cursor)
+                       (lp-export-dome lightprobe path size (get-flags))
+                       (end-busy-cursor))
+                (void))))
 
         ;; File / Export Sphere...
 
-        (define (do-export-sphere control event)
-          (let ((path (put-file)))
-            (if path (lp-export-sphere lightprobe path 1024 (get-flags)) #f)))
+        (define (do-export-rect control event)
+          (let* ((path (put-file))
+                 (size (get-size path)))
+            (if size (begin
+                       (begin-busy-cursor)
+                       (lp-export-rect lightprobe path size (get-flags))
+                       (end-busy-cursor))
+                (void))))
 
         ;; ---------------------------------------------------------------------
 
@@ -544,7 +567,7 @@
                         [shortcut-prefix (get-shifted-shortcut-prefix)])
         (new menu-item% [parent file]
                         [label "Export Sphere Map..."]
-                        [callback do-export-sphere]
+                        [callback do-export-rect]
                         [shortcut #\e]
                         [shortcut-prefix (get-optional-shortcut-prefix)]))
 
@@ -881,6 +904,42 @@
                     (set-lightprobe-path! path))
 
                   (void))) (void)))))
+
+  ;;----------------------------------------------------------------------------
+
+  (define lp-export-dialog%
+    (class dialog%
+      (super-new [parent root]
+                 [label "Export"]
+                 [min-width  300]
+                 [min-height 100])
+
+      (init-field name)
+      (define state #f)
+
+      (new message% [parent this] [label name])
+
+      (define text (new text-field%
+                        [parent this]
+                        [label "Image Size: "]
+                        [init-value "1024"]))
+
+      (define buttons (new horizontal-pane% [parent this]))
+
+      (new button%
+           [parent buttons]
+           [label "Don't Export"]
+           [callback (lambda x (set! state #f) (send this show #f))])
+      (new pane%
+           [parent buttons])
+      (new button%
+           [parent buttons]
+           [label "Export"]
+           [style '(border)]
+           [callback (lambda x (set! state #t) (send this show #f))])
+
+      (define/public (get-value)
+        (if state (string->number (send text get-value)) #f))))
 
   ;;----------------------------------------------------------------------------
 

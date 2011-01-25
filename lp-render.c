@@ -1219,8 +1219,6 @@ static void draw_sphere_grid(lightprobe *L)
 static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
 {
     glEnable(GL_BLEND);
-
-    glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
 
     /* Render any/all images to the accumulation buffer. */
@@ -1336,14 +1334,6 @@ void lp_export_cube(lightprobe *L, const char *path, int s, int f)
         transform_pos_z,
         transform_neg_z
     };
-    GLfloat color[6][3] = {
-        { 1.0f, 0.0f, 0.0f },
-        { 1.0f, 0.0f, 1.0f },
-        { 0.0f, 1.0f, 0.0f },
-        { 1.0f, 1.0f, 0.0f },
-        { 0.0f, 0.0f, 1.0f },
-        { 0.0f, 1.0f, 1.0f }
-    };
 
     framebuffer export;
     void       *pixels[6];
@@ -1371,11 +1361,8 @@ void lp_export_cube(lightprobe *L, const char *path, int s, int f)
             glMatrixMode(GL_MODELVIEW);
             glLoadIdentity();
             transform[i]();
-/*
-            glBindFramebuffer(GL_FRAMEBUFFER, export.frame);
-            glClearColor(color[i][0], color[i][1], color[i][2], 1.0);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-*/
+
+            glDisable(GL_CULL_FACE);
             draw_sphere(export.frame, L, f, 0);
 
             /* Copy the output to a buffer. */
@@ -1413,6 +1400,7 @@ static void lp_export(lightprobe *L,
         /* Render the sphere. */
 
         glViewport(0, 0, w, h);
+        glEnable(GL_CULL_FACE);
         draw_sphere(export.frame, L, f, 1.0);
 
         /* Copy the output to a buffer and write the buffer to a file. */
@@ -1431,7 +1419,7 @@ void lp_export_dome(lightprobe *L, const char *path, int s, int f)
     lp_export(L, path, LP_RENDER_DOME, s, s, f);
 }
 
-void lp_export_sphere(lightprobe *L, const char *path, int s, int f)
+void lp_export_rect(lightprobe *L, const char *path, int s, int f)
 {
     lp_export(L, path, LP_RENDER_RECT, 2 * s, s, f);
 }
