@@ -13,6 +13,8 @@
 ;;;; for more details.
 
 (module lp-compose racket/gui
+  (require srfi/2)
+  (require ffi/unsafe)
   
   ;;----------------------------------------------------------------------------
 
@@ -34,8 +36,6 @@
   ;; the OpenGL Shading Language. This is managed by the lightprobe library, a
   ;; dynamically-loaded native code module written in C. The following FFI
   ;; binds that library API.
-
-  (require ffi/unsafe)
 
   (define lp-lib (ffi-lib "lp-render"))
 
@@ -85,9 +85,10 @@
   ;;----------------------------------------------------------------------------
   ;; Rendering
 
-  (define lp-render-grid 1)
-  (define lp-render-res  2)
-  (define lp-render-all  4)
+  (define lp-render-grid  1)
+  (define lp-render-res   2)
+  (define lp-render-all   4)
+  (define lp-render-alpha 8)
 
   (define lp-render-circle
     (gl-ffi "lp_render_circle"
@@ -465,7 +466,7 @@
         ;; File / Open
 
         (define (do-open control event)
-          (let ((path (get-file)))
+          (let ((path (get-file #f root)))
             (if path
                 (begin
                   (init-file)
@@ -482,7 +483,7 @@
         ;; File / Save As...
 
         (define (do-save-as control event)
-          (let ((path (put-file)))
+          (let ((path (put-file #f root)))
             (if path
                 (begin
                   (set-lightprobe-path! path)
@@ -491,45 +492,28 @@
 
         ;; ---------------------------------------------------------------------
 
-        (define (get-size path)
-          (if path
-              (let ((dialog (new lp-export-dialog% [name (path->string path)])))
-                (send dialog show #t)
-                (send dialog get-value))
-              #f))
+        ;; File / Export
 
-        ;; File / Export Cube...
+        (define (do-export func)
 
-        (define (do-export-cube control event)
-          (let* ((path (put-file))
-                 (size (get-size path)))
-            (if size (begin
-                       (begin-busy-cursor)
-                       (lp-export-cube lightprobe path size (get-flags))
-                       (end-busy-cursor))
-                (void))))
+          (let ((get-opts (lambda (name)
+                            (let ((dialog (new lp-export-dialog% [name name])))
+                              (send dialog show #t)
+                              (let ((alpha (send dialog get-alpha))
+                                    (size  (send dialog get-value)))
+                                (list size alpha))))))
 
-        ;; File / Export Dome...
+          (and-let* ((path  (put-file #f root #f #f "tif"))
+                     (opts  (get-opts (path->string path)))
+                     (size  (first  opts)))
 
-        (define (do-export-dome control event)
-          (let* ((path (put-file))
-                 (size (get-size path)))
-            (if size (begin
-                       (begin-busy-cursor)
-                       (lp-export-dome lightprobe path size (get-flags))
-                       (end-busy-cursor))
-                (void))))
+                    (begin-busy-cursor)
+                    (func lightprobe path size (get-flags (second opts)))
+                    (end-busy-cursor))))
 
-        ;; File / Export Sphere...
-
-        (define (do-export-rect control event)
-          (let* ((path (put-file))
-                 (size (get-size path)))
-            (if size (begin
-                       (begin-busy-cursor)
-                       (lp-export-rect lightprobe path size (get-flags))
-                       (end-busy-cursor))
-                (void))))
+        (define (do-export-cube control event) (do-export lp-export-cube))
+        (define (do-export-dome control event) (do-export lp-export-dome))
+        (define (do-export-rect control event) (do-export lp-export-rect))
 
         ;; ---------------------------------------------------------------------
 
@@ -877,7 +861,7 @@
                 (y (get-y))
                 (e (get-expo))
                 (z (get-zoom))
-                (f (get-flags)))
+                (f (get-flags #f)))
 
             (if (mode?)
                 (lp-render-circle lightprobe f w h x y e z)
@@ -912,34 +896,36 @@
       (super-new [parent root]
                  [label "Export"]
                  [min-width  300]
-                 [min-height 100])
+                 [min-height 120])
 
       (init-field name)
       (define state #f)
 
-      (new message% [parent this] [label name])
+      (new message% [parent this] [label name] [vert-margin 8])
 
-      (define text (new text-field%
-                        [parent this]
-                        [label "Image Size: "]
-                        [init-value "1024"]))
+      (define opts        (new group-box-panel% [parent this]
+                                                [label "Options"]))
+      (define size-text   (new text-field%      [parent opts]
+                                                [label "Image Size:"]
+                                                [init-value "1024"]))
+      (define alpha-check (new check-box%       [parent opts]
+                                                [label "Alpha Channel"]
+                                                [value #f]))
 
       (define buttons (new horizontal-pane% [parent this]))
 
-      (new button%
-           [parent buttons]
-           [label "Don't Export"]
-           [callback (lambda x (set! state #f) (send this show #f))])
-      (new pane%
-           [parent buttons])
-      (new button%
-           [parent buttons]
-           [label "Export"]
-           [style '(border)]
-           [callback (lambda x (set! state #t) (send this show #f))])
+      (new pane%   [parent buttons])
+      (new button% [parent buttons]
+                   [label "Cancel"]
+                   [callback (lambda x (set! state #f) (send this show #f))])
+      (new button% [parent buttons]
+                   [label "Export"]
+                   [style '(border)]
+                   [callback (lambda x (set! state #t) (send this show #f))])
 
+      (define/public (get-alpha) (send alpha-check get-value))
       (define/public (get-value)
-        (if state (string->number (send text get-value)) #f))))
+        (if state (string->number (send size-text get-value)) #f))))
 
   ;;----------------------------------------------------------------------------
 
@@ -972,7 +958,7 @@
              [save-file (lambda (path) (send images save-file path))]
              [load-file (lambda (path) (send images load-file path))]
              [init-file (lambda ()     (send images init-file))]
-             [get-flags (lambda ()     (get-flags))]
+             [get-flags (lambda (f)    (get-flags f))]
              [goto      (lambda (i)    (send images set-current i))]
              [notify    (lambda ()     (send canvas reshape))]))
 
@@ -986,7 +972,7 @@
              [get-zoom  (lambda ()     (send values get-zoom))]
              [get-expo  (lambda ()     (send values get-expo))]
              [get-image (lambda ()     (send images get-current))]
-             [get-flags (lambda ()     (get-flags))]
+             [get-flags (lambda (f)    (get-flags f))]
              [mode?     (lambda ()     (send menus  mode?))]))
 
       (define images
@@ -999,10 +985,11 @@
              [parent bot]
              [notify (lambda () (send canvas reshape))]))
 
-      (define (get-flags)
-        (bitwise-ior (if (send menus grid?) lp-render-grid 0)
-                     (if (send menus reso?) lp-render-res  0)
-                     (if (send values all?) lp-render-all  0)))))
+      (define (get-flags alpha?)
+        (bitwise-ior (if (send menus grid?) lp-render-grid  0)
+                     (if (send menus reso?) lp-render-res   0)
+                     (if (send values all?) lp-render-all   0)
+                     (if alpha?             lp-render-alpha 0)))))
   
   ;;----------------------------------------------------------------------------
 

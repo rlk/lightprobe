@@ -55,9 +55,10 @@ void  lp_set_value (lightprobe *lp, int k, float v);
 
 enum
 {
-    LP_RENDER_GRID = 1,
-    LP_RENDER_RES  = 2,
-    LP_RENDER_ALL  = 4
+    LP_RENDER_GRID  = 1,
+    LP_RENDER_RES   = 2,
+    LP_RENDER_ALL   = 4,
+    LP_RENDER_ALPHA = 8
 };
 
 void lp_render_circle(lightprobe *lp, int f, int w, int h,

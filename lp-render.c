@@ -186,10 +186,10 @@ static void sync(int interval)
 
 #include "srgb.h"
 
-/* Write the contents of an array buffers to a multi-page 4-channel 32-bit    */
-/* floating point TIFF image.                                                 */
+/* Write the contents of an array buffers to a multi-page 32-bit floating     */
+/*  point TIFF image.                                                         */
 
-static void tifwriten(const char *path, int w, int h, int n, void **p)
+static void tifwriten(const char *path, int w, int h, int c, int n, void **p)
 {
     TIFF *T = 0;
     
@@ -204,7 +204,7 @@ static void tifwriten(const char *path, int w, int h, int n, void **p)
             TIFFSetField(T, TIFFTAG_IMAGEWIDTH,      w);
             TIFFSetField(T, TIFFTAG_IMAGELENGTH,     h);
             TIFFSetField(T, TIFFTAG_BITSPERSAMPLE,  32);
-            TIFFSetField(T, TIFFTAG_SAMPLESPERPIXEL, 4);
+            TIFFSetField(T, TIFFTAG_SAMPLESPERPIXEL, c);
         
             TIFFSetField(T, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_RGB);
             TIFFSetField(T, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP);
@@ -222,10 +222,9 @@ static void tifwriten(const char *path, int w, int h, int n, void **p)
     }
 }
 
-/* Write the contents of a buffer to a 4-channel 32-bit floating point TIFF   */
-/* image.                                                                     */
+/* Write the contents of a buffer to a 32-bit floating point TIFF image.      */
 
-static void tifwrite(const char *path, int w, int h, void *p)
+static void tifwrite(const char *path, int w, int h, int c, void *p)
 {
     TIFF *T = 0;
     
@@ -238,7 +237,7 @@ static void tifwrite(const char *path, int w, int h, void *p)
         TIFFSetField(T, TIFFTAG_IMAGEWIDTH,      w);
         TIFFSetField(T, TIFFTAG_IMAGELENGTH,     h);
         TIFFSetField(T, TIFFTAG_BITSPERSAMPLE,  32);
-        TIFFSetField(T, TIFFTAG_SAMPLESPERPIXEL, 4);
+        TIFFSetField(T, TIFFTAG_SAMPLESPERPIXEL, c);
         
         TIFFSetField(T, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_RGB);
         TIFFSetField(T, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP);
@@ -595,17 +594,18 @@ static void free_framebuffer(framebuffer *F)
     glDeleteFramebuffers(1, &F->frame);
 }
 
-static void *read_framebuffer(framebuffer *F, GLsizei w, GLsizei h)
+static void *read_framebuffer(framebuffer *F, GLsizei w, GLsizei h, int alpha)
 {
+    GLenum   f = alpha ? GL_RGBA : GL_RGB;
+    GLsizei  c = alpha ? 4       : 3;
     GLubyte *p = 0;
 
     glBindFramebuffer(GL_FRAMEBUFFER, F->frame);
     {
-        if ((p = (GLubyte *) malloc(w * h * 4 * sizeof (GLfloat))))
+        if ((p = (GLubyte *) malloc(w * h * c * sizeof (GLfloat))))
         {
             glReadBuffer(GL_FRONT);
-            glReadPixels(0, 0, w, h, GL_RGBA, GL_FLOAT, p);
-            glReadBuffer(GL_BACK);
+            glReadPixels(0, 0, w, h, f, GL_FLOAT, p);
         }
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1367,14 +1367,17 @@ void lp_export_cube(lightprobe *L, const char *path, int s, int f)
 
             /* Copy the output to a buffer. */
 
-            pixels[i] = read_framebuffer(&export, s, s);
+            pixels[i] = read_framebuffer(&export, s, s, f & LP_RENDER_ALPHA);
         }
     }
     free_framebuffer(&export);
 
     /* Write the buffers to a file and release them. */
 
-    tifwriten(path, s, s, 6, pixels);
+    if (f & LP_RENDER_ALPHA)
+        tifwriten(path, s, s, 4, 6, pixels);
+    else
+        tifwriten(path, s, s, 3, 6, pixels);
 
     for (i = 0; i < 6; ++i)
         free(pixels[i]);
@@ -1405,9 +1408,13 @@ static void lp_export(lightprobe *L,
 
         /* Copy the output to a buffer and write the buffer to a file. */
 
-        if ((pixels = read_framebuffer(&export, w, h)))
+        if ((pixels = read_framebuffer(&export, w, h, f & LP_RENDER_ALPHA)))
         {
-            tifwrite(path, w, h, pixels);
+            if (f & LP_RENDER_ALPHA)
+                tifwrite(path, w, h, 4, pixels);
+            else
+                tifwrite(path, w, h, 3, pixels);
+
             free(pixels);
         }
     }
