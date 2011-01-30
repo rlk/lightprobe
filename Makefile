@@ -49,6 +49,9 @@ $(TARG) : $(OBJS) $(INCS)
 clean :
 	$(RM) -f $(TARG) $(OBJS) $(INCS)
 
+test : $(TARG)
+	./lp-compose driveway.dat
+
 #-------------------------------------------------------------------------------
 
 lp-render.o : lp-render.c lp-render.h $(INCS)
