@@ -1226,6 +1226,8 @@ static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
     glBindFramebuffer(GL_FRAMEBUFFER, L->accum.frame);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    glBlendEquation(GL_MAX);
+
     if (f & LP_RENDER_ALL)
     {
         int i;
@@ -1235,6 +1237,8 @@ static void draw_sphere(GLuint frame, lightprobe *L, int f, float e)
     }
     else
         draw_sphere_accum(L, L->images + L->select, 1.0);
+
+    glBlendEquation(GL_FUNC_ADD);
 
     /* Map the accumulation buffer to the output buffer. */
 
