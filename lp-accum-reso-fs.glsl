@@ -1,7 +1,6 @@
 #extension GL_ARB_texture_rectangle : enable
 
 varying vec3 N;
-varying vec3 T;
 
 uniform sampler2DRect image;
 uniform vec2          circle_p;

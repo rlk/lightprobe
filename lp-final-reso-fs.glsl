@@ -26,8 +26,7 @@ void main()
 {
     vec4 C = texture2DRect(image, gl_FragCoord.xy);
 
-    gl_FragColor = vec4(C.rgb, 1.0);
-//  gl_FragColor = vec4(acmecolor(C.r), 1.0);
+    gl_FragColor = vec4(acmecolor(C.r), 1.0);
 }
 
 /*----------------------------------------------------------------------------*/
