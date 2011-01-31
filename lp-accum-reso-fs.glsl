@@ -14,10 +14,7 @@ vec2 probe(vec3 n)
     float kr = length(n.xy);
     float ks = sin(0.5 * acos(n.z));
 
-    vec2 v = vec2(n.x, -n.y);
-    vec2 p = circle_p + circle_r * v * ks / kr;
-
-    return p;
+    return circle_p + circle_r * vec2(n.x, -n.y) * ks / kr;
 }
 
 float value(vec3 n)
@@ -27,6 +24,17 @@ float value(vec3 n)
 
 /*----------------------------------------------------------------------------*/
 
+void main()
+{
+    vec2 p = probe(normalize(N));
+
+    float r = 1.0 / length(vec2(length(dFdx(p)), length(dFdy(p))));
+
+    gl_FragColor = vec4(vec3(r), 1.0);
+}
+
+/*----------------------------------------------------------------------------*/
+/*
 float solidangle(vec3 a, vec3 b, vec3 c)
 {
     float y = dot(a, cross(b, c));
@@ -51,9 +59,9 @@ float acme(float p)
 {
     return log2(2.0943951 * p) / 2.0;
 }
-
+*/
 /*----------------------------------------------------------------------------*/
-
+/*
 void main()
 {
     const float d = 0.001;
@@ -78,5 +86,5 @@ void main()
 //  gl_FragColor = vec4(vec3(dp), 1.0);
     gl_FragColor = vec4(vec3(acme(pps)), 1.0);
 }
-
+*/
 /*----------------------------------------------------------------------------*/

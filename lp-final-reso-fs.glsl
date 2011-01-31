@@ -17,11 +17,7 @@ float impulse(float r, float dr, float x)
 
 vec3 acmecolor(float k)
 {
-    float d = fwidth(k) * 3.0;
-
-    float a = smoothstep(0.0, d, fract(k));
-    float z = smoothstep(1.0, 1.0 - d, fract(k));
-    return texture1D(color, k / 16.0).rgb * a * z;
+    return texture1D(color, k / 2.0).rgb;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -30,8 +26,8 @@ void main()
 {
     vec4 C = texture2DRect(image, gl_FragCoord.xy);
 
-//  gl_FragColor = vec4(C.rgb, 1.0);
-    gl_FragColor = vec4(acmecolor(C.r), 1.0);
+    gl_FragColor = vec4(C.rgb, 1.0);
+//  gl_FragColor = vec4(acmecolor(C.r), 1.0);
 }
 
 /*----------------------------------------------------------------------------*/

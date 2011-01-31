@@ -30,9 +30,12 @@
 
 #define LP_MAX_IMAGE 8
 
+#define SPH_R 8
+#define SPH_C 16
+/*
 #define SPH_R 32
 #define SPH_C 64
-
+*/
 /*----------------------------------------------------------------------------*/
 
 struct framebuffer
@@ -379,30 +382,22 @@ unsigned int lp_load_cubemap(const char *path)
 
 static GLuint init_colormap(void)
 {
-    static const GLubyte p[16][3] = {
+    static const GLubyte p[8][3] = {
         { 0x00, 0x00, 0x00 }, /*  0 K */
-        { 0x00, 0x00, 0x00 }, /*  1 K */
-        { 0x00, 0x00, 0x00 }, /*  2 K */
-        { 0x00, 0x00, 0x00 }, /*  3 K */
-        { 0x00, 0x00, 0x00 }, /*  4 K */
-        { 0x00, 0x00, 0x00 }, /*  5 K */
-        { 0x00, 0x00, 0x00 }, /*  6 K */
-        { 0x00, 0x00, 0x00 }, /*  7 K */
-        { 0x00, 0x00, 0xFF }, /*  8 B */
-        { 0xFF, 0x00, 0x00 }, /*  9 R */
-        { 0xFF, 0x00, 0xFF }, /* 10 M */
-        { 0x00, 0xFF, 0x00 }, /* 11 G */
-        { 0x00, 0xFF, 0xFF }, /* 12 C */
-        { 0xFF, 0xFF, 0x00 }, /* 13 Y */
-        { 0xFF, 0xFF, 0xFF }, /* 14 W */
-        { 0xFF, 0xFF, 0xFF }, /* 15 W */
+        { 0x00, 0x00, 0xFF }, /*  1 B */
+        { 0xFF, 0x00, 0x00 }, /*  2 R */
+        { 0xFF, 0x00, 0xFF }, /*  3 M */
+        { 0x00, 0xFF, 0x00 }, /*  4 G */
+        { 0x00, 0xFF, 0xFF }, /*  5 C */
+        { 0xFF, 0xFF, 0x00 }, /*  6 Y */
+        { 0xFF, 0xFF, 0xFF }, /*  7 W */
     };
     GLenum T = GL_TEXTURE_1D;
     GLuint o;
 
     glGenTextures(1,&o);
     glBindTexture(T, o);
-    glTexImage1D (T, 0, GL_RGB, 16, 0, GL_RGB, GL_UNSIGNED_BYTE, p);
+    glTexImage1D (T, 0, GL_RGB, 8, 0, GL_RGB, GL_UNSIGNED_BYTE, p);
 
     glTexParameteri(T, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(T, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1329,7 +1324,7 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
 
     /* Update the program and buffer caches.  Render the sphere. */
 
-    lp_set_program(L, LP_RENDER_VIEW, f);
+    lp_set_program(L, LP_RENDER_RECT, f);
     lp_set_buffer(L, w, h);
     glViewport(0, 0, w, h);
 
