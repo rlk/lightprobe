@@ -69,6 +69,8 @@ struct lightprobe
     GLuint  final_prog;
     GLuint  annot_prog;
 
+    GLuint  colormap;
+
     /* Sphere vertex buffers. */
 
     GLuint  vert_buff;
@@ -187,7 +189,7 @@ static void sync(int interval)
 #include "srgb.h"
 
 /* Write the contents of an array buffers to a multi-page 32-bit floating     */
-/*  point TIFF image.                                                         */
+/* point TIFF image.                                                          */
 
 static void tifwriten(const char *path, int w, int h, int c, int n, void **p)
 {
@@ -373,6 +375,45 @@ unsigned int lp_load_cubemap(const char *path)
         }
 
     return (unsigned int) o;
+}
+
+static GLuint init_colormap(void)
+{
+    static const GLubyte p[16][3] = {
+        { 0x00, 0x00, 0x00 }, /*  0 K */
+        { 0x00, 0x00, 0x00 }, /*  1 K */
+        { 0x00, 0x00, 0x00 }, /*  2 K */
+        { 0x00, 0x00, 0x00 }, /*  3 K */
+        { 0x00, 0x00, 0x00 }, /*  4 K */
+        { 0x00, 0x00, 0x00 }, /*  5 K */
+        { 0x00, 0x00, 0x00 }, /*  6 K */
+        { 0x00, 0x00, 0x00 }, /*  7 K */
+        { 0x00, 0x00, 0xFF }, /*  8 B */
+        { 0xFF, 0x00, 0x00 }, /*  9 R */
+        { 0xFF, 0x00, 0xFF }, /* 10 M */
+        { 0x00, 0xFF, 0x00 }, /* 11 G */
+        { 0x00, 0xFF, 0xFF }, /* 12 C */
+        { 0xFF, 0xFF, 0x00 }, /* 13 Y */
+        { 0xFF, 0xFF, 0xFF }, /* 14 W */
+        { 0xFF, 0xFF, 0xFF }, /* 15 W */
+    };
+    GLenum T = GL_TEXTURE_1D;
+    GLuint o;
+
+    glGenTextures(1,&o);
+    glBindTexture(T, o);
+    glTexImage1D (T, 0, GL_RGB, 16, 0, GL_RGB, GL_UNSIGNED_BYTE, p);
+
+    glTexParameteri(T, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(T, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(T, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+
+    return o;
+}
+
+static void free_colormap(GLuint o)
+{
+    glDeleteTextures(1, &o);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -888,10 +929,16 @@ static void gl_init(lightprobe *L, GLsizei r, GLsizei c)
     L->r = r;
     L->c = c;
     make_sphere(L->vert_buff, L->fill_buff, L->line_buff, L->r, L->c);
+
+    /* Generate the colormap texture. */
+
+    L->colormap = init_colormap();
 }
 
 static void gl_free(lightprobe *L)
 {
+    free_colormap(L->colormap);
+
     glDeleteBuffers(1, &L->vert_buff);
     glDeleteBuffers(1, &L->fill_buff);
     glDeleteBuffers(1, &L->line_buff);
@@ -1189,9 +1236,13 @@ static void draw_sphere_final(lightprobe *L, GLfloat e)
 {
     glUseProgram(L->final_prog);
 
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_1D, L->colormap);
+    glActiveTexture(GL_TEXTURE0);;
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, L->accum.color);
 
     UNIFORM1I(L->final_prog, "image",    0);
+    UNIFORM1I(L->final_prog, "color",    1);
     UNIFORM1F(L->final_prog, "exposure", e);
 
     glBlendFunc(GL_ONE, GL_ZERO);
