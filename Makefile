@@ -16,7 +16,7 @@ endif
 
 #-------------------------------------------------------------------------------
 
-OBJS= lp-render.o 
+OBJS= lp-render.o gl-sphere.o
 
 GLSL=	lp-cube-vs.glsl \
 	lp-dome-vs.glsl \

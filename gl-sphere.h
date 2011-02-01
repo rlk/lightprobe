@@ -17,7 +17,7 @@
 
 typedef struct gl_sphere gl_sphere;
 
-void gl_init_sphere(gl_sphere *);
+void gl_init_sphere(gl_sphere *, int, int);
 void gl_free_sphere(gl_sphere *);
 
 void gl_fill_globe(const gl_sphere *);
