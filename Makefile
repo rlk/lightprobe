@@ -16,20 +16,17 @@ endif
 
 #-------------------------------------------------------------------------------
 
-OBJS= lp-render.o gl-sphere.o
+OBJS= 	lp-render.o \
+	gl-sync.o \
+	gl-sphere.o \
+	gl-program.o \
+	gl-framebuffer.o
 
-GLSL=	lp-cube-vs.glsl \
-	lp-dome-vs.glsl \
-	lp-rect-vs.glsl \
-	lp-view-vs.glsl \
-	lp-accum-data-fs.glsl \
-	lp-accum-reso-fs.glsl \
-	lp-final-tone-fs.glsl \
-	lp-final-data-fs.glsl \
-	lp-final-reso-fs.glsl \
-	lp-annot-fs.glsl \
-	lp-image-vs.glsl \
-	lp-image-fs.glsl
+GLSL=	lp-circle-vs.glsl \
+	lp-circle-fs.glsl \
+	lp-sphere-vs.glsl \
+	lp-sblend-fs.glsl \
+	lp-sfinal-fs.glsl
 
 INCS= $(GLSL:.glsl=.h)
 

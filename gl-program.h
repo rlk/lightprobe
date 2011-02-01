@@ -1,4 +1,4 @@
-// GL-SPHERE Copyright (C) 2011 Robert Kooima
+// GL-PROGRAM Copyright (C) 2010 Robert Kooima
 //
 // This program is free software: you can redistribute it and/or modify it under
 // the terms of the GNU General Public License as published by the Free Software
@@ -10,35 +10,27 @@
 // FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 // details.
 
-#ifndef GL_SPHERE_H
-#define GL_SPHERE_H
+#ifndef GL_PROGRAM_H
+#define GL_PROGRAM_H
 
 //------------------------------------------------------------------------------
 
-struct gl_sphere
-{
-    GLsizei r;
-    GLsizei c;
+GLuint gl_load_vshader(const unsigned char *, unsigned int);
+GLuint gl_load_fshader(const unsigned char *, unsigned int);
 
-    GLuint  vert_buf;
-    GLuint  quad_buf;
-    GLuint  line_buf;
-};
-
-typedef struct gl_sphere gl_sphere;
+GLuint gl_load_program(GLuint, GLuint);
 
 //------------------------------------------------------------------------------
 
-void gl_init_sphere(gl_sphere *, int, int);
-void gl_free_sphere(gl_sphere *);
+GLuint gl_init_program(const unsigned char *, unsigned int,
+                       const unsigned char *, unsigned int);
+void   gl_free_program(GLuint);
 
-void gl_fill_globe(const gl_sphere *);
-void gl_fill_chart(const gl_sphere *);
-void gl_fill_polar(const gl_sphere *);
+//------------------------------------------------------------------------------
 
-void gl_line_globe(const gl_sphere *);
-void gl_line_chart(const gl_sphere *);
-void gl_line_polar(const gl_sphere *);
+void gl_uniform1i(GLuint, const char *, GLint);
+void gl_uniform1f(GLuint, const char *, GLfloat);
+void gl_uniform2f(GLuint, const char *, GLfloat, GLfloat);
 
 //------------------------------------------------------------------------------
 

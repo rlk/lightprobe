@@ -1,4 +1,4 @@
-// GL-SPHERE Copyright (C) 2011 Robert Kooima
+// GL-FRAMEBUFFER Copyright (C) 2010 Robert Kooima
 //
 // This program is free software: you can redistribute it and/or modify it under
 // the terms of the GNU General Public License as published by the Free Software
@@ -10,35 +10,28 @@
 // FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 // details.
 
-#ifndef GL_SPHERE_H
-#define GL_SPHERE_H
+#ifndef GL_FRAMEBUFFER_H
+#define GL_FRAMEBUFFER_H
 
 //------------------------------------------------------------------------------
 
-struct gl_sphere
+struct gl_framebuffer
 {
-    GLsizei r;
-    GLsizei c;
-
-    GLuint  vert_buf;
-    GLuint  quad_buf;
-    GLuint  line_buf;
+    GLsizei w;
+    GLsizei h;
+    GLuint  frame;
+    GLuint  color;
+    GLuint  depth;
 };
 
-typedef struct gl_sphere gl_sphere;
+typedef struct gl_framebuffer gl_framebuffer;
 
 //------------------------------------------------------------------------------
 
-void gl_init_sphere(gl_sphere *, int, int);
-void gl_free_sphere(gl_sphere *);
-
-void gl_fill_globe(const gl_sphere *);
-void gl_fill_chart(const gl_sphere *);
-void gl_fill_polar(const gl_sphere *);
-
-void gl_line_globe(const gl_sphere *);
-void gl_line_chart(const gl_sphere *);
-void gl_line_polar(const gl_sphere *);
+void  gl_size_framebuffer(gl_framebuffer *, GLsizei, GLsizei);
+void  gl_init_framebuffer(gl_framebuffer *, GLsizei, GLsizei);
+void  gl_free_framebuffer(gl_framebuffer *);
+void *gl_copy_framebuffer(gl_framebuffer *, GLboolean);
 
 //------------------------------------------------------------------------------
 
