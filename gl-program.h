@@ -15,6 +15,17 @@
 
 //------------------------------------------------------------------------------
 
+struct gl_program
+{
+    GLuint program;
+    GLuint vshader;
+    GLuint fshader;
+};
+
+typedef struct gl_program gl_program;
+
+//------------------------------------------------------------------------------
+
 GLuint gl_load_vshader(const unsigned char *, unsigned int);
 GLuint gl_load_fshader(const unsigned char *, unsigned int);
 
@@ -22,15 +33,15 @@ GLuint gl_load_program(GLuint, GLuint);
 
 //------------------------------------------------------------------------------
 
-GLuint gl_init_program(const unsigned char *, unsigned int,
-                       const unsigned char *, unsigned int);
-void   gl_free_program(GLuint);
+void gl_init_program(gl_program *, const unsigned char *, unsigned int,
+                                   const unsigned char *, unsigned int);
+void gl_free_program(gl_program *);
 
 //------------------------------------------------------------------------------
 
-void gl_uniform1i(GLuint, const char *, GLint);
-void gl_uniform1f(GLuint, const char *, GLfloat);
-void gl_uniform2f(GLuint, const char *, GLfloat, GLfloat);
+void gl_uniform1i(const gl_program *, const GLchar *, GLint);
+void gl_uniform1f(const gl_program *, const GLchar *, GLfloat);
+void gl_uniform2f(const gl_program *, const GLchar *, GLfloat, GLfloat);
 
 //------------------------------------------------------------------------------
 

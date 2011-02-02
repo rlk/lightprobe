@@ -1,13 +1,11 @@
 #extension GL_ARB_texture_rectangle : enable
 
 varying vec3 N;
-varying vec3 T;
 
 uniform sampler2DRect image;
+uniform sampler1D     color;
 uniform vec2          circle_p;
 uniform float         circle_r;
-uniform float         exposure;
-uniform float         saturate;
 
 /*----------------------------------------------------------------------------*/
 
@@ -22,23 +20,21 @@ vec2 probe(vec3 n)
     return p;
 }
 
-float value(vec3 n)
+float value(vec2 p)
 {
-    return smoothstep(-0.75, -0.25, n.z);
+    return 1.0 / length(vec2(length(dFdx(p)), length(dFdy(p))));
 }
 
 /*----------------------------------------------------------------------------*/
 
 void main()
 {
-    vec3 n = normalize(N);
-//  vec3 t = normalize(T);
-
+    vec3  n = normalize(N);
     vec2  p = probe(n);
-    float d = value(n);
+    float d = value(p);
 
     vec4  c = texture2DRect(image, p);
-    float a = max(saturate, c.a * d);
+    float a = c.a * d * d;
 
     gl_FragColor = vec4(c.rgb * a, a);
 }

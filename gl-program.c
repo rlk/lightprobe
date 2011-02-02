@@ -11,6 +11,8 @@
 // details.
 
 #include <GL/glew.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #include "gl-program.h"
 
@@ -138,41 +140,43 @@ GLuint gl_load_program(GLuint vert_shader, GLuint frag_shader)
 
 //------------------------------------------------------------------------------
 
-void gl_init_program(const unsigned char *vstr, unsigned int vlen,
+void gl_init_program(gl_program *P,
+                     const unsigned char *vstr, unsigned int vlen,
                      const unsigned char *fstr, unsigned int flen)
 {
-    return gl_load_program(gl_load_vshader(vstr, vlen),
-                           gl_load_fshader(fstr, flen));
+    P->vshader = gl_load_vshader(vstr, vlen);
+    P->fshader = gl_load_fshader(fstr, flen);
+
+    P->program = gl_load_program(P->vshader, P->fshader);
 }
 
-void gl_free_program(GLuint program)
+void gl_free_program(gl_program *P)
 {
-    GLuint  shaders[2];
-    GLsizei count;
+    glDeleteProgram(P->program);
 
-    glGetAttachedShaders(program, 2, &count, shaders);
+    glDeleteShader(P->vshader);
+    glDeleteShader(P->fshader);
 
-    if (count > 0) glDeleteShader(shaders[0]);
-    if (count > 1) glDeleteShader(shaders[1]);
-
-    glDeleteProgram(program);
+    P->program = 0;
+    P->vshader = 0;
+    P->fshader = 0;
 }
 
 //------------------------------------------------------------------------------
 
-void gl_uniform1i(GLuint program, const char *name, GLint a)
+void gl_uniform1i(const gl_program *P, const GLchar *name, GLint a)
 {
-    glUinform1i(glGetUniformLocation(program, name), a);
+    glUniform1i(glGetUniformLocation(P->program, name), a);
 }
 
-void gl_uniform1f(GLuint program, const char *name, GLfloat a)
+void gl_uniform1f(const gl_program *P, const GLchar *name, GLfloat a)
 {
-    glUinform1f(glGetUniformLocation(program, name), a);
+    glUniform1f(glGetUniformLocation(P->program, name), a);
 }
 
-void gl_uniform2f(GLuint program, const char *name, GLfloat a, GLfloat b)
+void gl_uniform2f(const gl_program *P, const GLchar *name, GLfloat a, GLfloat b)
 {
-    glUinform2f(glGetUniformLocation(program, name), a, b);
+    glUniform2f(glGetUniformLocation(P->program, name), a, b);
 }
 
 //------------------------------------------------------------------------------

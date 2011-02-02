@@ -3,7 +3,7 @@
 uniform sampler2DRect image;
 uniform vec2          circle_p;
 uniform float         circle_r;
-uniform float         exposure;
+uniform float         expo_n;
 
 /*----------------------------------------------------------------------------*/
 
@@ -19,7 +19,7 @@ void main()
     float r = length(p - circle_p);
 
     vec4  c = texture2DRect(image, p);
-    vec3  C = 1.0 - exp(-exposure * c.rgb);
+    vec3  C = 1.0 - exp(-expo_n * c.rgb);
 
     float k = impulse(circle_r * 1.00, d * 2.0, r)
             + impulse(circle_r * 0.50, d * 1.0, r)

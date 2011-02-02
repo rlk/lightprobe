@@ -29,16 +29,18 @@ typedef struct gl_sphere gl_sphere;
 
 //------------------------------------------------------------------------------
 
+enum
+{
+    GL_SPHERE_GLOBE,
+    GL_SPHERE_CHART,
+    GL_SPHERE_POLAR,
+};
+
 void gl_init_sphere(gl_sphere *, int, int);
 void gl_free_sphere(gl_sphere *);
 
-void gl_fill_globe(const gl_sphere *);
-void gl_fill_chart(const gl_sphere *);
-void gl_fill_polar(const gl_sphere *);
-
-void gl_line_globe(const gl_sphere *);
-void gl_line_chart(const gl_sphere *);
-void gl_line_polar(const gl_sphere *);
+void gl_fill_sphere(const gl_sphere *, int);
+void gl_line_sphere(const gl_sphere *, int);
 
 //------------------------------------------------------------------------------
 

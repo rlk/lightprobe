@@ -11,6 +11,8 @@
 // details.
 
 #include <GL/glew.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #include "gl-framebuffer.h"
 
@@ -103,7 +105,7 @@ void gl_init_framebuffer(gl_framebuffer *F, GLsizei w, GLsizei h)
     F->w = 0;
     F->h = 0;
 
-    if (w && h) size_framebuffer(F, w, h);
+    if (w && h) gl_size_framebuffer(F, w, h);
 }
 
 void gl_free_framebuffer(gl_framebuffer *F)

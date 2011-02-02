@@ -11,6 +11,7 @@
 // details.
 
 #include <math.h>
+#include <assert.h>
 #include <stddef.h>
 #include <GL/glew.h>
 
@@ -120,21 +121,21 @@ static void init_line(int r, int c)
         const int j2 = c / 2;
         const int j4 = c / 4;
 
-        for (j = 0; j < c; j++, l++)
+        for (j = 0; j < c; j++, l += 1)
         {
-            l->a = (GLushort) ((r / 2) * (c + 1) + (j    ));
-            l->b = (GLushort) ((r / 2) * (c + 1) + (j + 1));
+            l[0].a = (GLushort) ((r / 2) * (c + 1) + (j    ));
+            l[0].b = (GLushort) ((r / 2) * (c + 1) + (j + 1));
         }
-        for (i = 0; i < r; i++, l++)
+        for (i = 0; i < r; i++, l += 4)
         {
-            l->a = (GLushort) ((i    ) * (c + 1)          );
-            l->b = (GLushort) ((i + 1) * (c + 1)          );
-            l->a = (GLushort) ((i    ) * (c + 1)      + j4);
-            l->b = (GLushort) ((i + 1) * (c + 1)      + j4);
-            l->a = (GLushort) ((i    ) * (c + 1) + j2     );
-            l->b = (GLushort) ((i + 1) * (c + 1) + j2     );
-            l->a = (GLushort) ((i    ) * (c + 1) + j2 + j4);
-            l->b = (GLushort) ((i + 1) * (c + 1) + j2 + j4);
+            l[0].a = (GLushort) ((i    ) * (c + 1)          );
+            l[0].b = (GLushort) ((i + 1) * (c + 1)          );
+            l[1].a = (GLushort) ((i    ) * (c + 1)      + j4);
+            l[1].b = (GLushort) ((i + 1) * (c + 1)      + j4);
+            l[2].a = (GLushort) ((i    ) * (c + 1) + j2     );
+            l[2].b = (GLushort) ((i + 1) * (c + 1) + j2     );
+            l[3].a = (GLushort) ((i    ) * (c + 1) + j2 + j4);
+            l[3].b = (GLushort) ((i + 1) * (c + 1) + j2 + j4);
         }
 
         glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
@@ -201,7 +202,7 @@ void gl_free_sphere(gl_sphere *p)
 // vector length and offset within the vertex buffer.
 
 static void draw(GLuint eb, GLenum  mode, GLsizei num,
-                 GLuint vb, GLsizei size, GLvoid *off)
+                 GLuint vb, GLsizei size, const GLvoid *off)
 {
     const GLsizei stride = (GLsizei) sizeof (vert);
 
@@ -223,40 +224,31 @@ static void draw(GLuint eb, GLenum  mode, GLsizei num,
 // 2D chart, or 2D polar map. Choose the paramaters for the desired output and
 // let the above draw function do the work.
 
-void gl_fill_globe(const gl_sphere *p)
+void gl_fill_sphere(const gl_sphere *p, int m)
 {
-    draw(p->quad_buf, GL_QUADS, 4 * p->r * p->c,
-         p->vert_buf, 3, (GLvoid *) offsetof (vert, globe_pos));
+    static const GLsizei s[3] = { 3, 2, 2 };
+    static const GLvoid *o[3] = {
+        (GLvoid *) offsetof (vert, globe_pos),
+        (GLvoid *) offsetof (vert, chart_pos),
+        (GLvoid *) offsetof (vert, polar_pos),
+    };
+
+    assert(0 <= m && m < 3);
+
+    draw(p->quad_buf, GL_QUADS, 4 * p->r * p->c, p->vert_buf, s[m], o[m]);
 }
 
-void gl_fill_chart(const gl_sphere *p)
+void gl_line_sphere(const gl_sphere *p, int m)
 {
-    draw(p->quad_buf, GL_QUADS, 4 * p->r * p->c,
-         p->vert_buf, 2, (GLvoid *) offsetof (vert, chart_pos));
-}
+    static const GLsizei s[3] = { 3, 2, 2 };
+    static const GLvoid *o[3] = {
+        (GLvoid *) offsetof (vert, globe_pos),
+        (GLvoid *) offsetof (vert, chart_pos),
+        (GLvoid *) offsetof (vert, polar_pos),
+    };
 
-void gl_fill_polar(const gl_sphere *p)
-{
-    draw(p->quad_buf, GL_QUADS, 4 * p->r * p->c,
-         p->vert_buf, 2, (GLvoid *) offsetof (vert, polar_pos));
-}
+    assert(0 <= m && m < 3);
 
-void gl_line_globe(const gl_sphere *p)
-{
-    draw(p->line_buf, GL_LINES, 8 * p->r + 2 * p->c,
-         p->vert_buf, 3, (GLvoid *) offsetof (vert, globe_pos));
+    draw(p->line_buf, GL_LINES, 8 * p->r + 2 * p->c, p->vert_buf, s[m], o[m]);
 }
-
-void gl_line_chart(const gl_sphere *p)
-{
-    draw(p->line_buf, GL_LINES, 8 * p->r + 2 * p->c,
-         p->vert_buf, 2, (GLvoid *) offsetof (vert, chart_pos));
-}
-
-void gl_line_polar(const gl_sphere *p)
-{
-    draw(p->line_buf, GL_LINES, 8 * p->r + 2 * p->c,
-         p->vert_buf, 2, (GLvoid *) offsetof (vert, polar_pos));
-}
-
 //------------------------------------------------------------------------------
