@@ -478,14 +478,6 @@ void  lp_set_value(lightprobe *L, int k, float v)
 
 static void draw_circle_setup(lightprobe *L, int w, int h, float e)
 {
-    // Configure and clear the viewport.
-
-    glViewport(0, 0, w, h);
-
-    glClearColor(0.0, 0.0, 0.0, 0.0);
-    glClear(GL_COLOR_BUFFER_BIT |
-            GL_DEPTH_BUFFER_BIT);
-
     // Load the matrices.
 
     glMatrixMode(GL_PROJECTION);
@@ -503,6 +495,7 @@ static void draw_circle_setup(lightprobe *L, int w, int h, float e)
     gl_uniform1f(&L->circle, "expo_n", e);
 
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
 }
 
 // Render the image at index i scaled to zoom level Z, translated to panning
@@ -520,21 +513,17 @@ static void draw_circle_image(lightprobe *L, image *c,
     gl_uniform2f(&L->circle, "circle_p", c->values[LP_CIRCLE_X],
                                          c->values[LP_CIRCLE_Y]);
 
-    glPushMatrix();
-    {
-        glTranslated(X, Y, 0.0);
-        glScaled    (z, z, 1.0);
+    glTranslated(X, Y, 0.0);
+    glScaled    (z, z, 1.0);
 
-        glBegin(GL_QUADS);
-        {
-            glVertex2i(0,    0);
-            glVertex2i(c->w, 0);
-            glVertex2i(c->w, c->h);
-            glVertex2i(0,    c->h);
-        }
-        glEnd();
+    glBegin(GL_QUADS);
+    {
+        glVertex2i(0,    0);
+        glVertex2i(0,    c->h);
+        glVertex2i(c->w, c->h);
+        glVertex2i(c->w, 0);
     }
-    glPopMatrix();
+    glEnd();
 }
 
 // Render all loaded, visible images to a viewport with width W and height H.
@@ -546,10 +535,15 @@ void lp_render_circle(lightprobe *L, int f, int w, int h,
 {
     assert(L);
 
+    // Configure and clear the viewport.
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, w, h);
+
+    glClear(GL_COLOR_BUFFER_BIT);
+
     if (L->images[L->select].texture)
     {
-        gl_size_framebuffer(&L->acc, w, h);
-
         draw_circle_setup(L, w, h, e);
         draw_circle_image(L, L->images + L->select, w, h, x, y, z);
     }
@@ -597,11 +591,10 @@ static void transform_cube(GLint i)
 {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glFrustum(-0.5, +0.5, -0.5, +0.5, 0.5, 5.0);
+    glFrustum(+0.5, -0.5, -0.5, +0.5, 0.5, 5.0);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    glScaled(-1.0, 1.0, 1.0);
 
     switch (i)
     {
@@ -626,8 +619,8 @@ static void draw_sblend(lightprobe *L, image *I, int m)
 
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
 
-    gl_uniform1i(&L->sblend, "image",    0);
-    gl_uniform1i(&L->sblend, "colormap", 1);
+    gl_uniform1i(&L->sblend, "image", 0);
+    gl_uniform1i(&L->sblend, "color", 1);
     gl_uniform1f(&L->sblend, "circle_r", I->values[LP_CIRCLE_RADIUS]);
     gl_uniform2f(&L->sblend, "circle_p", I->values[LP_CIRCLE_X],
                                          I->values[LP_CIRCLE_Y]);
@@ -649,7 +642,7 @@ static void draw_sblend(lightprobe *L, image *I, int m)
 // accumulation of images previously, and giving the final quality-blended blend
 // of inputs. If we're rendering to the screen, then apply an exposure mapping.
 
-static void draw_sfinal(lightprobe *L, int m, GLfloat e)
+static void draw_sfinal(lightprobe *L, int f, int m, GLfloat e)
 {
     glUseProgram(L->sfinal.program);
 
@@ -658,10 +651,11 @@ static void draw_sfinal(lightprobe *L, int m, GLfloat e)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, L->acc.color);
 
-    gl_uniform1i(&L->sfinal, "image",    0);
-    gl_uniform1i(&L->sfinal, "colormap", 1);
-    gl_uniform1f(&L->sfinal, "expo_n",   e);
-    gl_uniform1f(&L->sfinal, "expo_k",   e ? 1 : 0);
+    gl_uniform1i(&L->sfinal, "image",  0);
+    gl_uniform1i(&L->sfinal, "color",  1);
+    gl_uniform1f(&L->sfinal, "expo_n", e);
+    gl_uniform1f(&L->sfinal, "expo_k", (e                ) ? 1.0 : 0.0);
+    gl_uniform1f(&L->sfinal, "reso_k", (f & LP_RENDER_RES) ? 1.0 : 0.0);
 
     glBlendFunc(GL_ONE, GL_ZERO);
     gl_fill_sphere(&L->sphere, m);
@@ -675,7 +669,6 @@ static void draw_sphere_grid(lightprobe *L, int m)
     glEnable(GL_LINE_SMOOTH);
 
     glColor4d(0.0, 0.0, 0.0, 0.2);
-    glColor4d(1.0, 1.0, 1.0, 0.2);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     {
         glLineWidth(0.5f);
@@ -713,7 +706,7 @@ static void draw_sphere(lightprobe *L, gl_framebuffer *F, int f, int m, float e)
     glBindFramebuffer(GL_FRAMEBUFFER, F ? F->frame : 0);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    draw_sfinal(L, m, e);
+    draw_sfinal(L, f, m, e);
 
     // Draw the grid.
 
