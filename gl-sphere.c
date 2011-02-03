@@ -71,11 +71,11 @@ static void init_vert(int r, int c)
                 v->globe_pos[1] = (GLfloat) (         sin(p));
                 v->globe_pos[2] = (GLfloat) (cos(t) * cos(p));
 
-                v->chart_pos[0] = (GLfloat) x;
-                v->chart_pos[1] = (GLfloat) y;
+                v->chart_pos[0] = (GLfloat) (1 - x);
+                v->chart_pos[1] = (GLfloat) (    y);
 
-                v->polar_pos[0] = (GLfloat) (cos(t) * (2.0 - 2.0 * y));
-                v->polar_pos[1] = (GLfloat) (sin(t) * (2.0 - 2.0 * y));
+                v->polar_pos[0] = (GLfloat) (sin(t) * (2.0 - 2.0 * y));
+                v->polar_pos[1] = (GLfloat) (cos(t) * (2.0 - 2.0 * y));
             }
 
         glUnmapBuffer(GL_ARRAY_BUFFER);
@@ -210,10 +210,13 @@ static void draw(GLuint eb, GLenum  mode, GLsizei num,
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eb);
     {
         glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_NORMAL_ARRAY);
         {
             glVertexPointer(size, GL_FLOAT, stride, off);
+            glNormalPointer(      GL_FLOAT, stride, 0);
             glDrawElements(mode, num, GL_UNSIGNED_SHORT, 0);
         }
+        glDisableClientState(GL_NORMAL_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
     }
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);

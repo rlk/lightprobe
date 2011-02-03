@@ -503,7 +503,6 @@ static void draw_circle_setup(lightprobe *L, int w, int h, float e)
     gl_uniform1f(&L->circle, "expo_n", e);
 
     glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
 }
 
 // Render the image at index i scaled to zoom level Z, translated to panning
@@ -578,7 +577,7 @@ static void transform_chart(void)
 {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho( 0, 1,  0, 1, -1, 1);
+    glOrtho(0, 1, 0, 1, -1, 1);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -676,7 +675,7 @@ static void draw_sphere_grid(lightprobe *L, int m)
     glEnable(GL_LINE_SMOOTH);
 
     glColor4d(0.0, 0.0, 0.0, 0.2);
-    glColor4d(1.0, 1.0, 1.0, 0.5);
+    glColor4d(1.0, 1.0, 1.0, 0.2);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     {
         glLineWidth(0.5f);
@@ -729,120 +728,51 @@ void lp_render_sphere(lightprobe *L, int f, int w, int h,
 {
     assert(L);
 
-    transform_polar();
-//  transform_chart();
-//  transform_globe(w, h, x, y, z);
-    
-    // Update the program and buffer caches.  Render the sphere.
-
     gl_size_framebuffer(&L->acc, w, h);
     glViewport(0, 0, w, h);
 
-//  draw_sphere(L, 0, f, GL_SPHERE_GLOBE, e);
-//  draw_sphere(L, 0, f, GL_SPHERE_CHART, e);
-    draw_sphere(L, 0, f, GL_SPHERE_POLAR, e);
+    transform_globe(w, h, x, y, z);
+    draw_sphere(L, 0, f, GL_SPHERE_GLOBE, e);
 }
 
-//----------------------------------------------------------------------------
-/*
-static void transform_pos_x(void)
-{
-    glScaled(-1.0, 1.0, 1.0);
-    glRotated(+90.0, 0.0, 1.0, 0.0);
-}
-
-static void transform_neg_x(void)
-{
-    glScaled(-1.0, 1.0, 1.0);
-    glRotated(-90.0, 0.0, 1.0, 0.0);
-}
-
-static void transform_pos_y(void)
-{
-    glScaled(-1.0, 1.0, 1.0);
-    glRotated(-90.0, 1.0, 0.0, 0.0); 
-    glRotated(180.0, 0.0, 1.0, 0.0);
-}
-
-static void transform_neg_y(void)
-{
-    glScaled(-1.0, 1.0, 1.0);
-    glRotated(+90.0, 1.0, 0.0, 0.0);
-    glRotated(180.0, 0.0, 1.0, 0.0); 
-}
-
-static void transform_pos_z(void)
-{
-    glScaled(-1.0, 1.0, 1.0);
-    glRotated(180.0, 0.0, 1.0, 0.0);
-}
-
-static void transform_neg_z(void)
-{
-    glScaled(-1.0, 1.0, 1.0);
-}
-
-typedef void (*transform_func)(void);
-*/
 //------------------------------------------------------------------------------
 
 void lp_export_cube(lightprobe *L, const char *path, int s, int f)
 {
-/*
-    transform_func transform[6] = {
-        transform_pos_x,
-        transform_neg_x,
-        transform_pos_y,
-        transform_neg_y,
-        transform_pos_z,
-        transform_neg_z
-    };
-
     gl_framebuffer export;
-    void *pixels[6];
+    void          *pixels[6];
     int i;
 
-    // Update the program and buffer caches.
+    // Render all six cube map size, copying each output to a buffer.
 
+    glFrontFace(GL_CW);
     gl_size_framebuffer(&L->acc, s, s);
     gl_init_framebuffer(&export, s, s);
     {
-        GLfloat d = 0.25;
-
         glViewport(0, 0, s, s);
 
         for (i = 0; i < 6; ++i)
         {
-            // Apply the view transformation and render the sphere.
-
-            glMatrixMode(GL_PROJECTION);
-            glLoadIdentity();
-            glFrustum(-d, +d, -d, +d, d, 5.0);
-
-            glMatrixMode(GL_MODELVIEW);
-            glLoadIdentity();
-            transform[i]();
-
-            glDisable(GL_CULL_FACE);
+            transform_cube(i);
             draw_sphere(L, &export, f, GL_SPHERE_GLOBE, 0);
-
-            // Copy the output to a buffer.
 
             pixels[i] = gl_copy_framebuffer(&export, f & LP_RENDER_ALPHA);
         }
     }
     gl_free_framebuffer(&export);
+    glFrontFace(GL_CCW);
 
-    // Write the buffers to a file and release them.
+    // Write the buffers to a file.
 
     if (f & LP_RENDER_ALPHA)
         tifwriten(path, s, s, 4, 6, pixels);
     else
         tifwriten(path, s, s, 3, 6, pixels);
 
+    // Release the buffers.
+
     for (i = 0; i < 6; ++i)
         free(pixels[i]);
-*/
 }
 //------------------------------------------------------------------------------
 
@@ -852,29 +782,28 @@ static void lp_export(lightprobe *L,
     gl_framebuffer export;
     void          *pixels;
 
-    // Initialize the export framebuffer.
+    // Render the sphere and copy the output to a buffer.
 
     gl_size_framebuffer(&L->acc, w, h);
     gl_init_framebuffer(&export, w, h);
     {
-        // Render the sphere.
-
         glViewport(0, 0, w, h);
         draw_sphere(L, &export, f, m, 0);
 
-        // Copy the output to a buffer and write the buffer to a file.
-
-        if ((pixels = gl_copy_framebuffer(&export, f & LP_RENDER_ALPHA)))
-        {
-            if (f & LP_RENDER_ALPHA)
-                tifwrite(path, w, h, 4, pixels);
-            else
-                tifwrite(path, w, h, 3, pixels);
-
-            free(pixels);
-        }
+        pixels = gl_copy_framebuffer(&export, f & LP_RENDER_ALPHA);
     }
     gl_free_framebuffer(&export);
+
+    // Write the buffer to a file.
+
+    if (f & LP_RENDER_ALPHA)
+        tifwrite(path, w, h, 4, pixels);
+    else
+        tifwrite(path, w, h, 3, pixels);
+
+    // Release the buffer.
+
+    free(pixels);
 }
 
 void lp_export_dome(lightprobe *L, const char *path, int s, int f)
