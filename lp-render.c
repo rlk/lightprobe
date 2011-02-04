@@ -251,7 +251,7 @@ unsigned int lp_load_texture(const char *path, int *w, int *h)
     }
     return (unsigned int) o;
 }
-
+/*
 static GLuint gl_init_colormap(void)
 {
     static const GLubyte p[8][3] = {
@@ -274,6 +274,83 @@ static GLuint gl_init_colormap(void)
     glTexParameteri(T, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(T, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(T, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+
+    return o;
+}
+*/
+ /*
+static void mkbuf(GLint   i, GLsizei s,
+                  GLubyte r, GLubyte g, GLubyte b, GLubyte a)
+{
+    GLubyte *p;
+    GLubyte *q;
+
+    if ((p = q = (GLubyte *) malloc(4 * s * s)))
+    {
+        while (q < p + 4 * s * s)
+        {
+            *q++ = r;
+            *q++ = g;
+            *q++ = b;
+            *q++ = a;
+        }
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, i, GL_RGBA,
+                     s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, p);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, i, GL_RGBA,
+                     s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, p);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, i, GL_RGBA,
+                     s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, p);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, i, GL_RGBA,
+                     s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, p);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, i, GL_RGBA,
+                     s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, p);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, i, GL_RGBA,
+                     s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, p);
+        free(p);
+    }
+}
+ */
+static void mkbuf(GLint   i, GLsizei s,
+                  GLubyte r, GLubyte g, GLubyte b, GLubyte a)
+{
+    GLubyte *p;
+    GLubyte *q;
+
+    if ((p = q = (GLubyte *) malloc(4 * s * s)))
+    {
+        while (q < p + 4 * s * s)
+        {
+            *q++ = r;
+            *q++ = g;
+            *q++ = b;
+            *q++ = a;
+        }
+        glTexImage2D(GL_TEXTURE_2D, i, GL_RGBA, s, s, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, p);
+        free(p);
+    }
+}
+
+static GLuint gl_init_colormap(void)
+{
+//  GLenum T = GL_TEXTURE_CUBE_MAP;
+    GLenum T = GL_TEXTURE_2D;
+    GLuint o;
+
+    glGenTextures(1,&o);
+    glBindTexture(T, o);
+
+    glTexParameteri(T, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(T, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    mkbuf(0, 1 << 7, 0xFF, 0xFF, 0xFF, 0xFF);
+    mkbuf(1, 1 << 6, 0xFF, 0xFF, 0x00, 0xDF);
+    mkbuf(2, 1 << 5, 0x00, 0xFF, 0xFF, 0xBF);
+    mkbuf(3, 1 << 4, 0x00, 0xFF, 0x00, 0x9F);
+    mkbuf(4, 1 << 3, 0xFF, 0x00, 0xFF, 0x7F);
+    mkbuf(5, 1 << 2, 0xFF, 0x00, 0x00, 0x5F);
+    mkbuf(6, 1 << 1, 0x00, 0x00, 0xFF, 0x3F);
+    mkbuf(7, 1 << 0, 0x00, 0x00, 0x00, 0x1F);
 
     return o;
 }
@@ -579,7 +656,7 @@ static void draw_sfinal(lightprobe *L, int f, int m, GLfloat e)
     glUseProgram(L->sfinal.program);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_1D, L->colormap);
+    glBindTexture(GL_TEXTURE_2D, L->colormap);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, L->acc.color);
 
@@ -587,7 +664,7 @@ static void draw_sfinal(lightprobe *L, int f, int m, GLfloat e)
     gl_uniform1i(&L->sfinal, "color",  1);
     gl_uniform1f(&L->sfinal, "expo_n", e);
     gl_uniform1f(&L->sfinal, "expo_k", (e                ) ? 1.0 : 0.0);
-    gl_uniform1f(&L->sfinal, "reso_k", (f & LP_RENDER_RES) ? 1.0 : 0.0);
+    gl_uniform1f(&L->sfinal, "reso_k", (f & LP_RENDER_RES) ? 0.5 : 0.0);
 
     glBlendFunc(GL_ONE, GL_ZERO);
     gl_fill_sphere(&L->sphere, m);

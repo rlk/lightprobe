@@ -3,7 +3,8 @@
 varying vec3 N;
 
 uniform sampler2DRect image;
-uniform sampler1D     color;
+//uniform sampler1D     color;
+uniform sampler2D   color;
 uniform vec2          circle_p;
 uniform float         circle_r;
 
@@ -31,12 +32,14 @@ void main()
 {
     vec3  n = normalize(N);
     vec2  p = probe(n);
-    float d = value(p);
+//  float d = value(p);
+    vec4 X =  texture2D(color, p, -4.0);
 
     vec4  c = texture2DRect(image, p);
-    float a = c.a * d * d;
+//    float a = c.a * d * d;
 
-    gl_FragColor = vec4(c.rgb * a, a);
+//   gl_FragColor = vec4(c.rgb * a, a);
+    gl_FragColor = vec4((X.rgb + c.rgb) * 0.5, 1.0);
 }
 
 /*----------------------------------------------------------------------------*/
