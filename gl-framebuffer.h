@@ -31,7 +31,7 @@ typedef struct gl_framebuffer gl_framebuffer;
 void  gl_size_framebuffer(gl_framebuffer *, GLsizei, GLsizei);
 void  gl_init_framebuffer(gl_framebuffer *, GLsizei, GLsizei);
 void  gl_free_framebuffer(gl_framebuffer *);
-void *gl_copy_framebuffer(gl_framebuffer *, GLboolean);
+void *gl_copy_framebuffer(gl_framebuffer *, GLint);
 
 //------------------------------------------------------------------------------
 

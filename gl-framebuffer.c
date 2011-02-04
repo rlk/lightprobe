@@ -115,10 +115,9 @@ void gl_free_framebuffer(gl_framebuffer *F)
     glDeleteFramebuffers(1, &F->frame);
 }
 
-void *gl_copy_framebuffer(gl_framebuffer *F, GLboolean alpha)
+void *gl_copy_framebuffer(gl_framebuffer *F, GLint c)
 {
-    GLenum   f = alpha ? GL_RGBA : GL_RGB;
-    GLsizei  c = alpha ? 4       : 3;
+    GLenum   f = (c == 4) ? GL_RGBA : GL_RGB;
     GLubyte *p = 0;
 
     glBindFramebuffer(GL_FRAMEBUFFER, F->frame);

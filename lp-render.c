@@ -473,129 +473,43 @@ void  lp_set_value(lightprobe *L, int k, float v)
 
 //------------------------------------------------------------------------------
 
-// Set up circle rendering to a viewport of width W and height H. Set the
-// uniform values for exposure E.
-
-static void draw_circle_setup(lightprobe *L, int w, int h, float e)
+static void proj_globe(int w, int h, float z)
 {
-    // Load the matrices.
+    glFrustum(-0.1 * w / h / z,
+              +0.1 * w / h / z,
+              -0.1         / z,
+              +0.1         / z, 0.1, 5.0);
+}
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
+static void proj_polar(int w, int h)
+{
+    glOrtho(-(GLdouble) w / h,
+            +(GLdouble) w / h, -1.0, 1.0, -1.0, 1.0);
+}
+
+static void proj_chart(void)
+{
+    glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+}
+
+static void proj_cube()
+{
+    glFrustum(+0.5, -0.5, -0.5, +0.5, 0.5, 5.0);
+}
+
+static void proj_image(int w, int h)
+{
     glOrtho(0, w, h, 0, 0, 1);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-
-    // Ready the program.
-
-    glUseProgram(L->circle.program);
-
-    gl_uniform1i(&L->circle, "image",  0);
-    gl_uniform1f(&L->circle, "expo_n", e);
-
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_BLEND);
 }
 
-// Render the image at index i scaled to zoom level Z, translated to panning
-// position X Y.
-
-static void draw_circle_image(lightprobe *L, image *c,
-                              int w, int h, float x, float y, float z)
+static void view_globe(float x, float y)
 {
-    int X = -(c->w * z - w) * x;
-    int Y = -(c->h * z - h) * y;
-
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, c->texture);
-
-    gl_uniform1f(&L->circle, "circle_r", c->values[LP_CIRCLE_RADIUS]);
-    gl_uniform2f(&L->circle, "circle_p", c->values[LP_CIRCLE_X],
-                                         c->values[LP_CIRCLE_Y]);
-
-    glTranslated(X, Y, 0.0);
-    glScaled    (z, z, 1.0);
-
-    glBegin(GL_QUADS);
-    {
-        glVertex2i(0,    0);
-        glVertex2i(0,    c->h);
-        glVertex2i(c->w, c->h);
-        glVertex2i(c->w, 0);
-    }
-    glEnd();
-}
-
-// Render all loaded, visible images to a viewport with width W and height H.
-// F gives rendering option flags. X and Y give normalized pan positions.
-// E is exposure, and Z is zoom.
-
-void lp_render_circle(lightprobe *L, int f, int w, int h,
-                      float x, float y, float e, float z)
-{
-    assert(L);
-
-    // Configure and clear the viewport.
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, w, h);
-
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    if (L->images[L->select].texture)
-    {
-        draw_circle_setup(L, w, h, e);
-        draw_circle_image(L, L->images + L->select, w, h, x, y, z);
-    }
-}
-
-//------------------------------------------------------------------------------
-
-static void transform_globe(GLsizei w, GLsizei h,
-                            GLfloat x, GLfloat y, GLfloat z)
-{
-    const GLdouble H = 0.1 * w / h / z;
-    const GLdouble V = 0.1         / z;
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glFrustum(-H, +H, -V, +V, 0.1, 5.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
     glRotated(180 * y -  90, 1, 0, 0);
     glRotated(360 * x - 180, 0, 1, 0);
 }
 
-static void transform_chart(void)
+static void view_cube(int i)
 {
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, 1, 0, 1, -1, 1);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-}
-
-static void transform_polar(void)
-{
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(-1, 1, -1, 1, -1, 1);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-}
-
-static void transform_cube(GLint i)
-{
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glFrustum(+0.5, -0.5, -0.5, +0.5, 0.5, 5.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-
     switch (i)
     {
     case 0: glRotated(+90, 0, 1, 0);                          break;
@@ -604,6 +518,24 @@ static void transform_cube(GLint i)
     case 3: glRotated(+90, 1, 0, 0); glRotated(180, 0, 1, 0); break;
     case 4: glRotated(180, 0, 1, 0);                          break;
     }
+}
+
+static void transform(int f, int w, int h, int i, float x, float y, float z)
+{
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+
+    if      (f & LP_RENDER_GLOBE) proj_globe(w, h, z);
+    else if (f & LP_RENDER_CHART) proj_chart( );
+    else if (f & LP_RENDER_POLAR) proj_polar(w, h);
+    else if (f & LP_RENDER_CUBE)  proj_cube ( );
+    else                          proj_image(w, h);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    if      (f & LP_RENDER_GLOBE) view_globe(x, y);
+    else if (f & LP_RENDER_CUBE)  view_cube (i);
 }
 
 //------------------------------------------------------------------------------
@@ -680,11 +612,18 @@ static void draw_sphere_grid(lightprobe *L, int m)
     glColor4d(1.0, 1.0, 1.0, 1.0);
 }
 
-static void draw_sphere(lightprobe *L, gl_framebuffer *F, int f, int m, float e)
+static void draw_sphere(lightprobe *L, int f, int w, int h, 
+                        float x, float y, float e, float z, GLuint frame)
 {
+    int m = 0;
+
+    if      (f & LP_RENDER_GLOBE) m = GL_SPHERE_GLOBE;
+    else if (f & LP_RENDER_POLAR) m = GL_SPHERE_POLAR;
+    else if (f & LP_RENDER_CHART) m = GL_SPHERE_CHART;
+
     glEnable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
+
+    transform(f, w, h, 0, x, y, z);
 
     // Render any/all images to the accumulation buffer.
 
@@ -703,7 +642,7 @@ static void draw_sphere(lightprobe *L, gl_framebuffer *F, int f, int m, float e)
 
     // Map the accumulation buffer to the output buffer.
 
-    glBindFramebuffer(GL_FRAMEBUFFER, F ? F->frame : 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, frame);
     glClear(GL_COLOR_BUFFER_BIT);
 
     draw_sfinal(L, f, m, e);
@@ -714,22 +653,96 @@ static void draw_sphere(lightprobe *L, gl_framebuffer *F, int f, int m, float e)
         draw_sphere_grid(L, m);
 }
 
-//------------------------------------------------------------------------------
-
-void lp_render_sphere(lightprobe *L, int f, int w, int h,
-                      float x, float y, float e, float z)
+static void draw_circle(lightprobe *L, int f, int w, int h,
+                        float x, float y, float e, float z)
 {
-    assert(L);
+    const image *I = L->images + L->select;
 
-    gl_size_framebuffer(&L->acc, w, h);
-    glViewport(0, 0, w, h);
+    if (I->texture)
+    {
+        int X = -(I->w * z - w) * x;
+        int Y = -(I->h * z - h) * y;
 
-    transform_globe(w, h, x, y, z);
-    draw_sphere(L, 0, f, GL_SPHERE_GLOBE, e);
+        glDisable(GL_BLEND);
+
+        glUseProgram(L->circle.program);
+
+        gl_uniform1i(&L->circle, "image",  0);
+        gl_uniform1f(&L->circle, "expo_n", e);
+        gl_uniform1f(&L->circle, "circle_r", I->values[LP_CIRCLE_RADIUS]);
+        gl_uniform2f(&L->circle, "circle_p", I->values[LP_CIRCLE_X],
+                                             I->values[LP_CIRCLE_Y]);
+
+        glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        transform(f, w, h, 0, x, y, z);
+
+        glTranslated(X, Y, 0.0);
+        glScaled    (z, z, 1.0);
+
+        glBegin(GL_QUADS);
+        {
+            glVertex2i(0,    0);
+            glVertex2i(0,    I->h);
+            glVertex2i(I->w, I->h);
+            glVertex2i(I->w, 0);
+        }
+        glEnd();
+    }
 }
 
 //------------------------------------------------------------------------------
 
+void lp_render(lightprobe *L, int f, int w, int h,
+               float x, float y, float e, float z)
+{
+    glEnable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+
+    gl_size_framebuffer(&L->acc, w, h);
+
+    glViewport(0, 0, w, h);
+
+    if (f & 0xF)
+        draw_sphere(L, f, w, h, x, y, e, z, 0);
+    else
+        draw_circle(L, f, w, h, x, y, e, z);
+}
+
+void lp_export(lightprobe *L, int f, int s, const char *path)
+{
+    const int a = (f & LP_RENDER_ALPHA) ? 4     : 3;
+    const int w = (f & LP_RENDER_CHART) ? s + s : s;
+    const int h = s;
+
+    gl_framebuffer export;
+    void          *pixels;
+
+    // Render the sphere and copy the output to a buffer.
+
+    gl_size_framebuffer(&L->acc, w, h);
+    gl_init_framebuffer(&export, w, h);
+    {
+        glViewport(0, 0, w, h);
+
+        draw_sphere(L, f, w, h, 0, 0, 0, 0, export.frame);
+
+        pixels = gl_copy_framebuffer(&export, a);
+    }
+    gl_free_framebuffer(&export);
+
+    // Write the buffer to a file and release it.
+
+    tifwrite(path, w, h, a, pixels);
+
+    free(pixels);
+}
+
+//------------------------------------------------------------------------------
+/*
 void lp_export_cube(lightprobe *L, const char *path, int s, int f)
 {
     gl_framebuffer export;
@@ -767,48 +780,5 @@ void lp_export_cube(lightprobe *L, const char *path, int s, int f)
     for (i = 0; i < 6; ++i)
         free(pixels[i]);
 }
-//------------------------------------------------------------------------------
-
-static void lp_export(lightprobe *L,
-                      const char *path, int m, int w, int h, int f)
-{
-    gl_framebuffer export;
-    void          *pixels;
-
-    // Render the sphere and copy the output to a buffer.
-
-    gl_size_framebuffer(&L->acc, w, h);
-    gl_init_framebuffer(&export, w, h);
-    {
-        glViewport(0, 0, w, h);
-        draw_sphere(L, &export, f, m, 0);
-
-        pixels = gl_copy_framebuffer(&export, f & LP_RENDER_ALPHA);
-    }
-    gl_free_framebuffer(&export);
-
-    // Write the buffer to a file.
-
-    if (f & LP_RENDER_ALPHA)
-        tifwrite(path, w, h, 4, pixels);
-    else
-        tifwrite(path, w, h, 3, pixels);
-
-    // Release the buffer.
-
-    free(pixels);
-}
-
-void lp_export_dome(lightprobe *L, const char *path, int s, int f)
-{
-    transform_polar();
-    lp_export(L, path, GL_SPHERE_POLAR, s, s, f);
-}
-
-void lp_export_rect(lightprobe *L, const char *path, int s, int f)
-{
-    transform_chart();
-    lp_export(L, path, GL_SPHERE_CHART, 2 * s, s, f);
-}
-
+*/
 //------------------------------------------------------------------------------

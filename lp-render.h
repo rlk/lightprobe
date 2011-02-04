@@ -55,27 +55,19 @@ void  lp_set_value (lightprobe *lp, int k, float v);
 
 enum
 {
-    LP_RENDER_GRID  = 1,
-    LP_RENDER_RES   = 2,
-    LP_RENDER_ALL   = 4,
-    LP_RENDER_ALPHA = 8
+    LP_RENDER_GLOBE =   1,
+    LP_RENDER_CHART =   2,
+    LP_RENDER_POLAR =   4,
+    LP_RENDER_CUBE  =   8,
+    LP_RENDER_ALL   =  16,
+    LP_RENDER_RES   =  32,
+    LP_RENDER_GRID  =  64,
+    LP_RENDER_ALPHA = 256,
 };
 
-void lp_render_circle(lightprobe *lp, int f, int w, int h,
-                      float x, float y, float e, float z);
-void lp_render_sphere(lightprobe *lp, int f, int w, int h,
-                      float x, float y, float e, float z);
-/*
-void lp_render_img(lightprobe *lp, int f, int W, int H, float e, float z,
-                                                        float x, float y);
-void lp_render_env(lightprobe *lp, int f, int W, int H, float e, float k,
-                                      float x, float y, float z, float w);
-*/
-/*----------------------------------------------------------------------------*/
-
-void lp_export_cube(lightprobe *lp, const char *path, int s, int f);
-void lp_export_dome(lightprobe *lp, const char *path, int s, int f);
-void lp_export_rect(lightprobe *lp, const char *path, int s, int f);
+void lp_export(lightprobe *lp, int f, int s, const char *path);
+void lp_render(lightprobe *lp, int f, int w, int h,
+               float x, float y, float e, float z);
 
 /*----------------------------------------------------------------------------*/
 

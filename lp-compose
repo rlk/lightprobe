@@ -84,29 +84,23 @@
     (lp-ffi "lp_get_value" (_fun _pointer _int        -> _float)))
 
   ;;----------------------------------------------------------------------------
-  ;; Rendering
+  ;; Render and export
 
-  (define lp-render-grid  1)
-  (define lp-render-res   2)
-  (define lp-render-all   4)
-  (define lp-render-alpha 8)
+  (define lp-render-globe  1)
+  (define lp-render-chart  2)
+  (define lp-render-polar  4)
+  (define lp-render-cube   8)
+  (define lp-render-all   16)
+  (define lp-render-res   32)
+  (define lp-render-grid  64)
+  (define lp-render-alpha 256)
 
-  (define lp-render-circle
-    (gl-ffi "lp_render_circle"
+  (define lp-render
+    (gl-ffi "lp_render"
       (_fun _pointer _int _int _int _float _float _float _float -> _void)))
-  (define lp-render-sphere
-    (gl-ffi "lp_render_sphere" 
-      (_fun _pointer _int _int _int _float _float _float _float -> _void)))
-
-  ;;----------------------------------------------------------------------------
-  ;; Export
-
-  (define lp-export-cube
-    (gl-ffi "lp_export_cube" (_fun _pointer _path _int _int -> _void)))
-  (define lp-export-dome
-    (gl-ffi "lp_export_dome" (_fun _pointer _path _int _int -> _void)))
-  (define lp-export-rect
-    (gl-ffi "lp_export_rect" (_fun _pointer _path _int _int -> _void)))
+  (define lp-export
+    (gl-ffi "lp_export"
+      (_fun _pointer _int _int _path -> _void)))
 
   ;;----------------------------------------------------------------------------
   ;; Image value accessors
@@ -495,26 +489,29 @@
 
         ;; File / Export
 
-        (define (do-export func)
+        ;; (define (do-export func)
 
-          (let ((get-opts (lambda (name)
-                            (let ((dialog (new lp-export-dialog% [name name])))
-                              (send dialog show #t)
-                              (let ((alpha (send dialog get-alpha))
-                                    (size  (send dialog get-value)))
-                                (list size alpha))))))
+        ;;   (let ((get-opts (lambda (name)
+        ;;                     (let ((dialog (new lp-export-dialog% [name name])))
+        ;;                       (send dialog show #t)
+        ;;                       (let ((alpha (send dialog get-alpha))
+        ;;                             (size  (send dialog get-value)))
+        ;;                         (list size alpha))))))
 
-          (and-let* ((path  (put-file #f root #f #f "tif"))
-                     (opts  (get-opts (path->string path)))
-                     (size  (first  opts)))
+        ;;   (and-let* ((path  (put-file #f root #f #f "tif"))
+        ;;              (opts  (get-opts (path->string path)))
+        ;;              (size  (first  opts)))
 
-                    (begin-busy-cursor)
-                    (func lightprobe path size (get-flags (second opts)))
-                    (end-busy-cursor))))
+        ;;             (begin-busy-cursor)
+        ;;             (func lightprobe path size (get-flags (second opts)))
+        ;;             (end-busy-cursor))))
 
-        (define (do-export-cube control event) (do-export lp-export-cube))
-        (define (do-export-dome control event) (do-export lp-export-dome))
-        (define (do-export-rect control event) (do-export lp-export-rect))
+        (define (do-export flag)
+          #t)
+
+        (define (do-export-chart control event) (do-export lp-render-chart))
+        (define (do-export-polar control event) (do-export lp-render-polar))
+        (define (do-export-cube  control event) (do-export lp-render-cube))
 
         ;; ---------------------------------------------------------------------
 
@@ -546,13 +543,13 @@
                         [callback do-export-cube]
                         [shortcut #\e])
         (new menu-item% [parent file]
-                        [label "Export Dome Map..."]
-                        [callback do-export-dome]
+                        [label "Export Polar Map..."]
+                        [callback do-export-polar]
                         [shortcut #\e]
                         [shortcut-prefix (get-shifted-shortcut-prefix)])
         (new menu-item% [parent file]
                         [label "Export Sphere Map..."]
-                        [callback do-export-rect]
+                        [callback do-export-chart]
                         [shortcut #\e]
                         [shortcut-prefix (get-optional-shortcut-prefix)]))
 
@@ -561,18 +558,30 @@
 
       (define view (new menu% [parent this] [label "View"]))
 
-      (define mode-t (new checkable-menu-item%
+      (define mode-0 (new checkable-menu-item%
                           [parent view]
-                          [label "Input Image"]
-                          [shortcut #\i]
+                          [label "Source Image"]
+                          [shortcut #\1]
                           [checked #t]
-                          [callback (lambda x (set-mode #t))]))
-      (define mode-f (new checkable-menu-item%
+                          [callback (lambda x (set-mode 0))]))
+      (define mode-1 (new checkable-menu-item%
                           [parent view]
-                          [label "Output Mapping"]
-                          [shortcut #\m]
-                          [checked  #f]
-                          [callback (lambda x (set-mode #f))]))
+                          [label "Perspective view"]
+                          [shortcut #\2]
+                          [checked #f]
+                          [callback (lambda x (set-mode 1))]))
+      (define mode-2 (new checkable-menu-item%
+                          [parent view]
+                          [label "Sphere map"]
+                          [shortcut #\3]
+                          [checked #f]
+                          [callback (lambda x (set-mode 2))]))
+      (define mode-3 (new checkable-menu-item%
+                          [parent view]
+                          [label "Polar map"]
+                          [shortcut #\4]
+                          [checked #f]
+                          [callback (lambda x (set-mode 3))]))
 
       (new separator-menu-item% [parent view]) ; -------------------------------
 
@@ -593,7 +602,7 @@
 
       (define grid-t (new checkable-menu-item%
                           [parent view]
-                          [label "Output Grid"]
+                          [label "Grid"]
                           [shortcut #\g]
                           [checked  #f]
                           [callback (lambda x (notify))]))
@@ -603,19 +612,24 @@
       (new menu-item% [parent view]
                       [label "Image 1"]
                       [shortcut #\1]
-                      [callback (lambda x (goto 0))])
+                      [callback (lambda x (goto 0))]
+                      [shortcut-prefix (get-optional-shortcut-prefix)])
       (new menu-item% [parent view]
                       [label "Image 2"]
                       [shortcut #\2]
-                      [callback (lambda x (goto 1))])
+                      [callback (lambda x (goto 1))]
+                      [shortcut-prefix (get-optional-shortcut-prefix)])
       (new menu-item% [parent view]
                       [label "Image 3"]
                       [shortcut #\3]
-                      [callback (lambda x (goto 2))])
+                      [callback (lambda x (goto 2))]
+                      [shortcut-prefix (get-optional-shortcut-prefix)])
 
-      (define (set-mode b)
-        (send mode-t check b)
-        (send mode-f check (not b))
+      (define (set-mode i)
+        (send mode-0 check (= i 0))
+        (send mode-1 check (= i 1))
+        (send mode-2 check (= i 2))
+        (send mode-3 check (= i 3))
         (notify))
 
       (define (set-reso b)
@@ -623,9 +637,14 @@
         (send reso-f check (not b))
         (notify))
 
-      (define/public (mode?) (send mode-t is-checked?))
       (define/public (reso?) (send reso-t is-checked?))
-      (define/public (grid?) (send grid-t is-checked?))))
+      (define/public (grid?) (send grid-t is-checked?))
+      (define/public (mode)
+        (cond ((send mode-0 is-checked?) 0)
+              ((send mode-1 is-checked?) 1)
+              ((send mode-2 is-checked?) 2)
+              ((send mode-3 is-checked?) 3)))))
+              
 
   ;;----------------------------------------------------------------------------
 
@@ -647,20 +666,20 @@
   ;;   Right ... View pan or rotate, depending on mode
   ;; S-Right ... View zoom
 
-  (define (get-click-op event mode?)
+  (define (get-click-op event circle?)
     (let ((type    (send event get-event-type))
           (shift?  (send event get-shift-down))
           (alt?    (send event get-alt-down)))
 
       (case type
-        ((left-down)  (cond (alt?   'circle-size)
-                            (shift? 'sphere-roll)
-                            (mode?  'circle-move)
-                            (else   'sphere-rot)))
-        ((middle-down)              'circle-size)
-        ((right-down) (cond (shift? 'view-zoom)
-                            (mode?  'view-pan)
-                            (else   'view-rot)))
+        ((left-down)  (cond (alt?    'circle-size)
+                            (shift?  'sphere-roll)
+                            (circle? 'circle-move)
+                            (else    'sphere-rot)))
+        ((middle-down)               'circle-size)
+        ((right-down) (cond (shift?  'view-zoom)
+                            (circle? 'view-pan)
+                            (else    'view-rot)))
         (else #f))))
 
   ;; The lp-canvas handles all lightprobe rendering. As creator of the OpenGL
@@ -678,7 +697,7 @@
       (init-field get-expo)
       (init-field get-image)
       (init-field get-flags)
-      (init-field mode?)
+      (init-field mode)
 
       (super-new [style '(gl hscroll vscroll no-autoclear)])
 
@@ -704,13 +723,13 @@
 
       (define (get-w)
         (let ((ww (* 2 (send this get-width))))
-          (if (mode?)
+          (if (positive? (mode))
               (max 1  (round->exact (* (get-zoom) (lp-get-width  lightprobe))))
               (max ww (round->exact (* (get-zoom) ww))))))
 
       (define (get-h)
         (let ((hh (* 2 (send this get-height))))
-          (if (mode?)
+          (if (positive? (mode))
               (max 1  (round->exact (* (get-zoom) (lp-get-height lightprobe))))
               (max hh (round->exact (* (get-zoom) hh))))))
 
@@ -794,7 +813,7 @@
              (set! click-z        cz)
              (set! click-scroll-x sx)
              (set! click-scroll-y sy)
-             (set! click-op (get-click-op event (mode?))))
+             (set! click-op (get-click-op event (zero? (mode)))))
 
             ((motion)
              (case click-op
@@ -864,9 +883,7 @@
                 (z (get-zoom))
                 (f (get-flags #f)))
 
-            (if (mode?)
-                (lp-render-circle lightprobe f w h x y e z)
-                (lp-render-sphere lightprobe f w h x y e z))
+            (lp-render lightprobe f w h x y e z)
 
             (with-gl-context (lambda () (swap-gl-buffers))))))
 
@@ -974,7 +991,7 @@
              [get-expo  (lambda ()     (send values get-expo))]
              [get-image (lambda ()     (send images get-current))]
              [get-flags (lambda (f)    (get-flags f))]
-             [mode?     (lambda ()     (send menus  mode?))]))
+             [mode      (lambda ()     (send menus mode))]))
 
       (define images
         (new image-list%
@@ -987,10 +1004,14 @@
              [notify (lambda () (send canvas reshape))]))
 
       (define (get-flags alpha?)
-        (bitwise-ior (if (send menus grid?) lp-render-grid  0)
-                     (if (send menus reso?) lp-render-res   0)
+        (let ((m (send menus mode)))
+        (bitwise-ior (if (= m 1)            lp-render-globe 0)
+                     (if (= m 2)            lp-render-chart 0)
+                     (if (= m 3)            lp-render-polar 0)
                      (if (send values all?) lp-render-all   0)
-                     (if alpha?             lp-render-alpha 0)))))
+                     (if (send menus reso?) lp-render-res   0)
+                     (if (send menus grid?) lp-render-grid  0)
+                     (if alpha?             lp-render-alpha 0))))))
   
   ;;----------------------------------------------------------------------------
 
