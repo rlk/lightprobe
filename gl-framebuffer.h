@@ -19,6 +19,7 @@ struct gl_framebuffer
 {
     GLsizei w;
     GLsizei h;
+    GLsizei c;
     GLuint  frame;
     GLuint  color;
     GLuint  depth;
@@ -28,8 +29,8 @@ typedef struct gl_framebuffer gl_framebuffer;
 
 //------------------------------------------------------------------------------
 
-void  gl_size_framebuffer(gl_framebuffer *, GLsizei, GLsizei);
-void  gl_init_framebuffer(gl_framebuffer *, GLsizei, GLsizei);
+void  gl_size_framebuffer(gl_framebuffer *, GLsizei, GLsizei, GLsizei);
+void  gl_init_framebuffer(gl_framebuffer *, GLsizei, GLsizei, GLsizei);
 void  gl_free_framebuffer(gl_framebuffer *);
 void *gl_copy_framebuffer(gl_framebuffer *, GLint);
 

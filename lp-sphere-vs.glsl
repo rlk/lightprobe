@@ -1,4 +1,5 @@
 
+varying vec3 V;
 varying vec3 N;
 
 void main()
@@ -9,6 +10,7 @@ void main()
                   gl_TextureMatrix[0][2].xyz);
     N = M * gl_Normal;
 */
+    V = gl_Vertex.xyz;
     N = (gl_TextureMatrix[0] * vec4(gl_Normal, 0.0)).xyz;
     gl_Position = ftransform();
 }

@@ -49,8 +49,11 @@ struct lightprobe
 {
     // OpenGL support.
 
+    gl_framebuffer tmp;
     gl_framebuffer acc;
     gl_program     circle;
+    gl_program     scoord;
+    gl_program     schart;
     gl_program     sblend;
     gl_program     sfinal;
     gl_sphere      sphere;
@@ -251,7 +254,7 @@ unsigned int lp_load_texture(const char *path, int *w, int *h)
     }
     return (unsigned int) o;
 }
-/*
+
 static GLuint gl_init_colormap(void)
 {
     static const GLubyte p[8][3] = {
@@ -277,7 +280,7 @@ static GLuint gl_init_colormap(void)
 
     return o;
 }
-*/
+
  /*
 static void mkbuf(GLint   i, GLsizei s,
                   GLubyte r, GLubyte g, GLubyte b, GLubyte a)
@@ -310,6 +313,7 @@ static void mkbuf(GLint   i, GLsizei s,
     }
 }
  */
+  /*
 static void mkbuf(GLint   i, GLsizei s,
                   GLubyte r, GLubyte g, GLubyte b, GLubyte a)
 {
@@ -354,10 +358,37 @@ static GLuint gl_init_colormap(void)
 
     return o;
 }
-
+  */
 static void gl_free_colormap(GLuint o)
 {
     glDeleteTextures(1, &o);
+}
+
+static void gl_fill_screen(void)
+{
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glBegin(GL_QUADS);
+    {
+        glNormal3d( 0.0,  0.0,  1.0);
+        glVertex3d(-1.0, -1.0,  0.0);
+        glVertex3d(+1.0, -1.0,  0.0);
+        glVertex3d(+1.0, +1.0,  0.0);
+        glVertex3d(-1.0, +1.0,  0.0);
+    }
+    glEnd();
+
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
 }
 
 //------------------------------------------------------------------------------
@@ -365,15 +396,22 @@ static void gl_free_colormap(GLuint o)
 #include "lp-circle-vs.h"
 #include "lp-circle-fs.h"
 #include "lp-sphere-vs.h"
+#include "lp-scoord-fs.h"
+#include "lp-schart-fs.h"
 #include "lp-sblend-fs.h"
 #include "lp-sfinal-fs.h"
 
 static void gl_init(lightprobe *L)
 {
-    gl_init_framebuffer(&L->acc, 0, 0);
+    gl_init_framebuffer(&L->tmp, 0, 0, 2);
+    gl_init_framebuffer(&L->acc, 0, 0, 4);
 
     gl_init_program(&L->circle, lp_circle_vs_glsl, lp_circle_vs_glsl_len,
                                 lp_circle_fs_glsl, lp_circle_fs_glsl_len);
+    gl_init_program(&L->scoord, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
+                                lp_scoord_fs_glsl, lp_scoord_fs_glsl_len);
+    gl_init_program(&L->schart, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
+                                lp_schart_fs_glsl, lp_schart_fs_glsl_len);
     gl_init_program(&L->sblend, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
                                 lp_sblend_fs_glsl, lp_sblend_fs_glsl_len);
     gl_init_program(&L->sfinal, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
@@ -392,9 +430,12 @@ static void gl_free(lightprobe *L)
 
     gl_free_program(&L->sfinal);
     gl_free_program(&L->sblend);
+    gl_free_program(&L->schart);
+    gl_free_program(&L->scoord);
     gl_free_program(&L->circle);
 
     gl_free_framebuffer(&L->acc);
+    gl_free_framebuffer(&L->tmp);
 }
 
 //------------------------------------------------------------------------------
@@ -555,7 +596,7 @@ static void proj_globe(int w, int h, float z)
     glFrustum(-0.1 * w / h / z,
               +0.1 * w / h / z,
               -0.1         / z,
-              +0.1         / z, 0.1, 5.0);
+              +0.1         / z, 0.1, 10.0);
 }
 
 static void proj_polar(int w, int h)
@@ -569,7 +610,7 @@ static void proj_chart(void)
     glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
 }
 
-static void proj_cube()
+static void proj_cube(void)
 {
     glFrustum(+0.5, -0.5, -0.5, +0.5, 0.5, 5.0);
 }
@@ -624,15 +665,10 @@ static void transform(int f, int w, int h, int i, float x, float y, float z)
 
 static void draw_sblend(lightprobe *L, image *I, int m)
 {
-    glUseProgram(L->sblend.program);
+    GLuint P;
 
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
+    // Set up the sphere transform for this image.
 
-    gl_uniform1i(&L->sblend, "image", 0);
-    gl_uniform1i(&L->sblend, "color", 1);
-    gl_uniform1f(&L->sblend, "circle_r", I->values[LP_CIRCLE_RADIUS]);
-    gl_uniform2f(&L->sblend, "circle_p", I->values[LP_CIRCLE_X],
-                                         I->values[LP_CIRCLE_Y]);
     glMatrixMode(GL_TEXTURE);
     {
         glLoadIdentity();
@@ -642,8 +678,44 @@ static void draw_sblend(lightprobe *L, image *I, int m)
     }
     glMatrixMode(GL_MODELVIEW);
 
+    // Render texture coordinates to the temporary buffer.
+
+    glBindFramebuffer(GL_FRAMEBUFFER, L->tmp.frame);
+
+    if (m == GL_SPHERE_CHART)
+        P = L->schart.program;
+    else
+        P = L->scoord.program;
+
+    glUseProgram(P);
+    GLUNIFORM1F(P, "circle_r", I->values[LP_CIRCLE_RADIUS]);
+    GLUNIFORM2F(P, "circle_p", I->values[LP_CIRCLE_X],
+                               I->values[LP_CIRCLE_Y]);
+//  GLUNIFORM2I(P, "size", I->w, I->h);
+
+    glClear(GL_COLOR_BUFFER_BIT);
+    glBlendFunc(GL_ONE, GL_ZERO);
+
+    if (m == GL_SPHERE_CHART)
+        gl_fill_screen();
+    else
+        gl_fill_sphere(&L->sphere, m);
+
+    // Blend the image to the accumulation buffer.
+
+    glBindFramebuffer(GL_FRAMEBUFFER, L->acc.frame);
+
+    glUseProgram(L->sblend.program);
+    gl_uniform1i(&L->sblend, "image", 0);
+    gl_uniform1i(&L->sblend, "coord", 1);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, L->tmp.color);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
+
     glBlendFunc(GL_ONE, GL_ONE);
-    gl_fill_sphere(&L->sphere, m);
+    gl_fill_screen();
 }
 
 // Render the accumulation buffer to the output buffer. Divide the RGB color by
@@ -651,23 +723,25 @@ static void draw_sblend(lightprobe *L, image *I, int m)
 // accumulation of images previously, and giving the final quality-blended blend
 // of inputs. If we're rendering to the screen, then apply an exposure mapping.
 
-static void draw_sfinal(lightprobe *L, int f, int m, GLfloat e)
+static void draw_sfinal(lightprobe *L, int f, int m, GLfloat e, GLuint frame)
 {
+    glBindFramebuffer(GL_FRAMEBUFFER, frame);
+    glClear(GL_COLOR_BUFFER_BIT);
+
     glUseProgram(L->sfinal.program);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, L->colormap);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, L->acc.color);
-
     gl_uniform1i(&L->sfinal, "image",  0);
     gl_uniform1i(&L->sfinal, "color",  1);
     gl_uniform1f(&L->sfinal, "expo_n", e);
     gl_uniform1f(&L->sfinal, "expo_k", (e                ) ? 1.0 : 0.0);
-    gl_uniform1f(&L->sfinal, "reso_k", (f & LP_RENDER_RES) ? 0.5 : 0.0);
+    gl_uniform1f(&L->sfinal, "reso_k", (f & LP_RENDER_RES) ? 1.0 : 0.0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_1D, L->colormap);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, L->acc.color);
 
     glBlendFunc(GL_ONE, GL_ZERO);
-    gl_fill_sphere(&L->sphere, m);
+    gl_fill_screen();
 }
 
 static void draw_sphere_grid(lightprobe *L, int m)
@@ -702,10 +776,12 @@ static void draw_sphere(lightprobe *L, int f, int w, int h,
 
     transform(f, w, h, 0, x, y, z);
 
-    // Render any/all images to the accumulation buffer.
+    // Initialize the accumulation buffer.
 
     glBindFramebuffer(GL_FRAMEBUFFER, L->acc.frame);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    // Render any/all images to the accumulation buffer.
 
     if (f & LP_RENDER_ALL)
     {
@@ -714,15 +790,11 @@ static void draw_sphere(lightprobe *L, int f, int w, int h,
             if (L->images[i].texture)
                 draw_sblend(L, L->images + i, m);
     }
-    else
-        draw_sblend(L, L->images + L->select, m);
+    else draw_sblend(L, L->images + L->select, m);
 
     // Map the accumulation buffer to the output buffer.
 
-    glBindFramebuffer(GL_FRAMEBUFFER, frame);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    draw_sfinal(L, f, m, e);
+    draw_sfinal(L, f, m, e, frame);
 
     // Draw the grid.
 
@@ -779,7 +851,8 @@ void lp_render(lightprobe *L, int f, int w, int h,
     glEnable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
 
-    gl_size_framebuffer(&L->acc, w, h);
+    gl_size_framebuffer(&L->tmp, w, h, 2);
+    gl_size_framebuffer(&L->acc, w, h, 4);
 
     glViewport(0, 0, w, h);
 
@@ -800,8 +873,9 @@ void lp_export(lightprobe *L, int f, int s, const char *path)
 
     // Render the sphere and copy the output to a buffer.
 
-    gl_size_framebuffer(&L->acc, w, h);
-    gl_init_framebuffer(&export, w, h);
+    gl_size_framebuffer(&L->tmp, w, h, 2);
+    gl_size_framebuffer(&L->acc, w, h, 4);
+    gl_init_framebuffer(&export, w, h, 3);
     {
         glViewport(0, 0, w, h);
 

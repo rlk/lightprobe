@@ -43,6 +43,11 @@ void gl_uniform1i(const gl_program *, const GLchar *, GLint);
 void gl_uniform1f(const gl_program *, const GLchar *, GLfloat);
 void gl_uniform2f(const gl_program *, const GLchar *, GLfloat, GLfloat);
 
+#define GLUNIFORM1I(p, s, a)    glUniform1i(glGetUniformLocation(p, s), a);
+#define GLUNIFORM2I(p, s, a, b) glUniform2i(glGetUniformLocation(p, s), a, b);
+#define GLUNIFORM1F(p, s, a)    glUniform1f(glGetUniformLocation(p, s), a);
+#define GLUNIFORM2F(p, s, a, b) glUniform2f(glGetUniformLocation(p, s), a, b);
+
 //------------------------------------------------------------------------------
 
 #endif

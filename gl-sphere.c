@@ -254,4 +254,5 @@ void gl_line_sphere(const gl_sphere *p, int m)
 
     draw(p->line_buf, GL_LINES, 8 * p->r + 2 * p->c, p->vert_buf, s[m], o[m]);
 }
+
 //------------------------------------------------------------------------------

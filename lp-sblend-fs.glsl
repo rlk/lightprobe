@@ -1,45 +1,35 @@
 #extension GL_ARB_texture_rectangle : enable
 
-varying vec3 N;
-
 uniform sampler2DRect image;
-//uniform sampler1D     color;
-uniform sampler2D   color;
-uniform vec2          circle_p;
-uniform float         circle_r;
+uniform sampler2DRect coord;
 
 /*----------------------------------------------------------------------------*/
 
-vec2 probe(vec3 n)
-{
-    float kr = length(n.xy);
-    float ks = sin(0.5 * acos(n.z));
-
-    vec2 v = vec2(n.x, -n.y);
-    vec2 p = circle_p + circle_r * v * ks / kr;
-
-    return p;
-}
-
-float value(vec2 p)
-{
-    return 1.0 / length(vec2(length(dFdx(p)), length(dFdy(p))));
-}
-
-/*----------------------------------------------------------------------------*/
+// a b c
+// d e f
+// g h i
 
 void main()
 {
-    vec3  n = normalize(N);
-    vec2  p = probe(n);
-//  float d = value(p);
-    vec4 X =  texture2D(color, p, -4.0);
+    vec2 p = gl_FragCoord.xy;
 
-    vec4  c = texture2DRect(image, p);
-//    float a = c.a * d * d;
+    vec2 a = texture2DRect(coord, p + vec2(-1.0,  1.0)).xy;
+    vec2 b = texture2DRect(coord, p + vec2( 0.0,  1.0)).xy;
+    vec2 c = texture2DRect(coord, p + vec2( 1.0,  1.0)).xy;
+    vec2 d = texture2DRect(coord, p + vec2(-1.0,  0.0)).xy;
+    vec2 e = texture2DRect(coord, p + vec2( 0.0,  0.0)).xy;
+    vec2 f = texture2DRect(coord, p + vec2( 1.0,  0.0)).xy;
+    vec2 g = texture2DRect(coord, p + vec2(-1.0, -1.0)).xy;
+    vec2 h = texture2DRect(coord, p + vec2( 0.0, -1.0)).xy;
+    vec2 i = texture2DRect(coord, p + vec2( 1.0, -1.0)).xy;
 
-//   gl_FragColor = vec4(c.rgb * a, a);
-    gl_FragColor = vec4((X.rgb + c.rgb) * 0.5, 1.0);
+    vec2 x = -a - 2.0 * b - c + g + 2.0 * h + i;
+    vec2 y = -a - 2.0 * d - g + c + 2.0 * f + i;
+
+    float D = length(vec2(length(x), length(y)));
+    vec4  C = texture2DRect(image, e);
+
+    gl_FragColor = vec4(C.rgb * C.a / D, C.a / D);
 }
 
 /*----------------------------------------------------------------------------*/
