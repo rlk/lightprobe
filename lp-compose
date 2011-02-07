@@ -225,25 +225,31 @@
       (init-field notify)
 
       (define width    300)
-      (define min-zoom -20)
-      (define max-zoom  50)
+
+      (define init-zoom   0)
+      (define  min-zoom -20)
+      (define  max-zoom  50)
+
+      (define init-expo 100)
+      (define  min-expo   0)
+      (define  max-expo 300)
 
       ; GUI sub-elements
 
       (define expo (new slider%   [parent this]
                                   [label "Exposure"]
-                                  [init-value  100]
-                                  [min-value     0]
-                                  [max-value width]
+                                  [init-value init-expo]
+                                  [min-value   min-expo]
+                                  [max-value   max-expo]
                                   [min-width width]
                                   [stretchable-width #f]
                                   [style '(horizontal plain)]
                                   [callback (lambda x (notify))]))
       (define zoom (new slider%   [parent this]
                                   [label "Zoom"]
-                                  [init-value  0]
-                                  [min-value min-zoom]
-                                  [max-value max-zoom]
+                                  [init-value init-zoom]
+                                  [min-value   min-zoom]
+                                  [max-value   max-zoom]
                                   [min-width width]
                                   [stretchable-width #f]
                                   [style '(horizontal plain)]
@@ -558,30 +564,30 @@
 
       (define view (new menu% [parent this] [label "View"]))
 
-      (define mode-0 (new checkable-menu-item%
+      (define mode-1 (new checkable-menu-item%
                           [parent view]
                           [label "Source Image"]
                           [shortcut #\1]
                           [checked #t]
-                          [callback (lambda x (set-mode 0))]))
-      (define mode-1 (new checkable-menu-item%
+                          [callback (lambda x (set-mode 'mode-image))]))
+      (define mode-2 (new checkable-menu-item%
                           [parent view]
                           [label "Perspective view"]
                           [shortcut #\2]
                           [checked #f]
-                          [callback (lambda x (set-mode 1))]))
-      (define mode-2 (new checkable-menu-item%
+                          [callback (lambda x (set-mode 'mode-globe))]))
+      (define mode-3 (new checkable-menu-item%
                           [parent view]
                           [label "Sphere map"]
                           [shortcut #\3]
                           [checked #f]
-                          [callback (lambda x (set-mode 2))]))
-      (define mode-3 (new checkable-menu-item%
+                          [callback (lambda x (set-mode 'mode-chart))]))
+      (define mode-4 (new checkable-menu-item%
                           [parent view]
-                          [label "Polar map"]
+                          [label "Dome Master"]
                           [shortcut #\4]
                           [checked #f]
-                          [callback (lambda x (set-mode 3))]))
+                          [callback (lambda x (set-mode 'mode-polar))]))
 
       (new separator-menu-item% [parent view]) ; -------------------------------
 
@@ -625,11 +631,11 @@
                       [callback (lambda x (goto 2))]
                       [shortcut-prefix (get-optional-shortcut-prefix)])
 
-      (define (set-mode i)
-        (send mode-0 check (= i 0))
-        (send mode-1 check (= i 1))
-        (send mode-2 check (= i 2))
-        (send mode-3 check (= i 3))
+      (define (set-mode m)
+        (send mode-1 check (eqv? m 'mode-image))
+        (send mode-2 check (eqv? m 'mode-globe))
+        (send mode-3 check (eqv? m 'mode-chart))
+        (send mode-4 check (eqv? m 'mode-polar))
         (notify))
 
       (define (set-reso b)
@@ -639,11 +645,12 @@
 
       (define/public (reso?) (send reso-t is-checked?))
       (define/public (grid?) (send grid-t is-checked?))
-      (define/public (mode)
-        (cond ((send mode-0 is-checked?) 0)
-              ((send mode-1 is-checked?) 1)
-              ((send mode-2 is-checked?) 2)
-              ((send mode-3 is-checked?) 3)))))
+
+      (define/public (get-mode)
+        (cond ((send mode-1 is-checked?) 'mode-image)
+              ((send mode-2 is-checked?) 'mode-globe)
+              ((send mode-3 is-checked?) 'mode-chart)
+              ((send mode-4 is-checked?) 'mode-polar)))))
               
 
   ;;----------------------------------------------------------------------------
@@ -689,7 +696,7 @@
 
   (define lp-canvas%
     (class canvas%
-      (inherit refresh with-gl-context swap-gl-buffers)
+      (inherit with-gl-context swap-gl-buffers)
 
       (init-field load-file)
       (init-field set-zoom)
@@ -697,60 +704,101 @@
       (init-field get-expo)
       (init-field get-image)
       (init-field get-flags)
-      (init-field mode)
+      (init-field get-mode)
 
       (super-new [style '(gl hscroll vscroll no-autoclear)])
 
       (send this init-manual-scrollbars 1000 1000 1000 1000 0 0)
 
-      ;; Compute the normalized scroll position: position / range.
-
-      (define (get-x)
-        (let ((x (send this get-scroll-pos   'horizontal))
-              (w (send this get-scroll-range 'horizontal)))
-          (if (positive? w)
-              (exact->inexact (/ x w))
-              0.0)))
-
-      (define (get-y)
-        (let ((y (send this get-scroll-pos   'vertical))
-              (h (send this get-scroll-range 'vertical)))
-          (if (positive? h)
-              (exact->inexact (/ y h))
-              0.0)))
-
       ;; Compute the virtual scene size for the given mode and zoom.
 
-      (define (get-w)
-        (let ((ww (* 2 (send this get-width))))
-          (if (positive? (mode))
-              (max 1  (round->exact (* (get-zoom) (lp-get-width  lightprobe))))
-              (max ww (round->exact (* (get-zoom) ww))))))
+      ;; (define (get-w)
+      ;;   (let ((ww (* 2 (send this get-width))))
+      ;;     (if (positive? (mode))
+      ;;         (max 1  (round->exact (* (get-zoom) (lp-get-width  lightprobe))))
+      ;;         (max ww (round->exact (* (get-zoom) ww))))))
 
-      (define (get-h)
-        (let ((hh (* 2 (send this get-height))))
-          (if (positive? (mode))
-              (max 1  (round->exact (* (get-zoom) (lp-get-height lightprobe))))
-              (max hh (round->exact (* (get-zoom) hh))))))
+      ;; (define (get-h)
+      ;;   (let ((hh (* 2 (send this get-height))))
+      ;;     (if (positive? (mode))
+      ;;         (max 1  (round->exact (* (get-zoom) (lp-get-height lightprobe))))
+      ;;         (max hh (round->exact (* (get-zoom) hh))))))
+
+      ;; Retrieve the size of the client area in pixels.
+
+      (define (get-ww) (let-values (((ww wh) (send this get-client-size))) ww))
+      (define (get-wh) (let-values (((ww wh) (send this get-client-size))) wh))
+
+      ;; Retrieve the current size and offset of the virtual area in pixels,
+      ;; taking into account the current zoom level.
+
+      (define (get-vw) (* (get-ww) (get-zoom)))
+      (define (get-vh) (* (get-wh) (get-zoom)))
+
+      (define (get-vx)
+        (let ((sx (send this get-scroll-pos   'horizontal))
+              (sw (send this get-scroll-range 'horizontal))
+              (vw (get-vw))
+              (ww (get-ww)))
+          (if (positive? sw) (exact->inexact (* (- vw ww) (/ sx sw))) 0.0)))
+
+      (define (get-vy)
+        (let ((sy (send this get-scroll-pos   'vertical))
+              (sh (send this get-scroll-range 'vertical))
+              (vh (get-vh))
+              (wh (get-wh)))
+          (if (positive? sh) (exact->inexact (* (- vh wh) (/ sy sh))) 0.0)))
+
+      ;; Refresh the contents of the canvas. Normally, this will just enqueue a
+      ;; paint event, which will ultimately cause some GL to happen.  However,
+      ;; if the zoom value or the size of the client area changed since the last
+      ;; call to refresh, then there's a little bit of work to do first: we must
+      ;; move the scroll positions to ensure that the center of the visible area
+      ;; (and thus the scrollbar handles) stay in place. This does not happen by
+      ;; default, as the canvas was not designed to allow external zoom control.
+
+      (define last-vw 1)
+      (define last-vh 1)
+
+      (define/override (refresh)
+        (let ((ww (get-ww))
+              (wh (get-wh))
+              (vw (get-vw))
+              (vh (get-vh))
+              (z  (get-zoom)))
+
+          (if (or (not (eqv? vw last-vw))
+                  (not (eqv? vh last-vh)))
+              (begin
+                (send this set-scroll-page  'horizontal    ww)
+                (send this set-scroll-page  'vertical      wh)
+                (send this set-scroll-range 'horizontal (max 0 (- vw ww)))
+                (send this set-scroll-range 'vertical   (max 0 (- vh wh))))
+              (void))
+
+          (set! last-vw vw)
+          (set! last-vh vh))
+        
+        (super refresh))
 
       ;; The center of the image should not move during zooming.  Thus, the
       ;; pan must be adjusted as image and zoom parameters change.  To make
       ;; this possible, we track the current image center in normalized image
       ;; coordinates, updating it with each reshape and scroll.
 
-      (define center-x 0.5)
-      (define center-y 0.5)
+      ;; (define center-x 0.5)
+      ;; (define center-y 0.5)
 
-      (define (recenter)
-        (let* ((iw (get-w))
-               (ih (get-h))
-               (ww (send this get-width))
-               (wh (send this get-height))
-               (sx (send this get-scroll-pos 'horizontal))
-               (sy (send this get-scroll-pos 'vertical)))
+      ;; (define (recenter)
+      ;;   (let* ((iw (get-w))
+      ;;          (ih (get-h))
+      ;;          (ww (send this get-width))
+      ;;          (wh (send this get-height))
+      ;;          (sx (send this get-scroll-pos 'horizontal))
+      ;;          (sy (send this get-scroll-pos 'vertical)))
 
-          (set! center-x (/ (+ sx (/ ww 2)) iw))
-          (set! center-y (/ (+ sy (/ wh 2)) ih))))
+      ;;     (set! center-x (/ (+ sx (/ ww 2)) iw))
+      ;;     (set! center-y (/ (+ sy (/ wh 2)) ih))))
 
       ; The reshape function is responsible for handling changes to the shape
       ; of the canvas.  Beyond changes to the shape of the parent window, this
@@ -759,26 +807,26 @@
       ; that the scroll bars make sense given the content currently on display.
       ; With this done, cache the image center and trigger a re-paint.
 
-      (define/public (reshape)
-        (let* ((iw (get-w))
-               (ih (get-h))
-               (ww (send this get-width))
-               (wh (send this get-height))
+      ;; (define/public (reshape)
+      ;;   (let* ((iw (get-w))
+      ;;          (ih (get-h))
+      ;;          (ww (send this get-width))
+      ;;          (wh (send this get-height))
 
-               (nw (max 0 (- iw ww)))
-               (nh (max 0 (- ih wh)))
-               (nx (round->exact (max 0 (- (* center-x iw) (/ ww 2)))))
-               (ny (round->exact (max 0 (- (* center-y ih) (/ wh 2))))))
+      ;;          (nw (max 0 (- iw ww)))
+      ;;          (nh (max 0 (- ih wh)))
+      ;;          (nx (round->exact (max 0 (- (* center-x iw) (/ ww 2)))))
+      ;;          (ny (round->exact (max 0 (- (* center-y ih) (/ wh 2))))))
 
-          (send this set-scroll-page  'horizontal ww)
-          (send this set-scroll-range 'horizontal nw)
-          (send this set-scroll-pos   'horizontal nx)
-          (send this set-scroll-page  'vertical   wh)
-          (send this set-scroll-range 'vertical   nh)
-          (send this set-scroll-pos   'vertical   ny)
+      ;;     (send this set-scroll-page  'horizontal ww)
+      ;;     (send this set-scroll-range 'horizontal nw)
+      ;;     (send this set-scroll-pos   'horizontal nx)
+      ;;     (send this set-scroll-page  'vertical   wh)
+      ;;     (send this set-scroll-range 'vertical   nh)
+      ;;     (send this set-scroll-pos   'vertical   ny)
 
-          (recenter)
-          (refresh)))
+      ;;     (recenter)
+      ;;     (refresh)))
 
       ; Left mouse button events configure the current image, while right mouse
       ; events act as shortcuts to panning and zooming. 
@@ -813,7 +861,7 @@
              (set! click-z        cz)
              (set! click-scroll-x sx)
              (set! click-scroll-y sy)
-             (set! click-op (get-click-op event (zero? (mode)))))
+             (set! click-op (get-click-op event #t)))
 
             ((motion)
              (case click-op
@@ -841,22 +889,18 @@
                        (ny (+ click-scroll-y (- click-y cy))))
                   (send this set-scroll-pos 'horizontal nx)
                   (send this set-scroll-pos 'vertical   ny)
-                  (recenter)
-                  (reshape)))
+                  (refresh)))
 
                ((view-rot)
-                (let* ((nw (send this get-scroll-range 'horizontal))
-                       (nx (+ click-scroll-x (- click-x cx)))
-                       (ny (+ click-scroll-y (- click-y cy)))
-                       (xx (round->exact (modulo nx nw))))
-                  (send this set-scroll-pos 'horizontal xx)
+                (let* ((nx (+ click-scroll-x (- click-x cx)))
+                       (ny (+ click-scroll-y (- click-y cy))))
+                  (send this set-scroll-pos 'horizontal nx)
                   (send this set-scroll-pos 'vertical   ny)
-                  (recenter)
-                  (reshape)))
+                  (refresh)))
 
                ((view-zoom)
-                (set-zoom (max 0.1 (+ click-z (/ (- click-y cy) 50))))
-                (reshape))
+                (set-zoom (+ click-z (/ (- click-y cy) 50)))
+                (refresh))
 
                (else (void))))
 
@@ -868,24 +912,29 @@
       ; Scroll events and canvas resizes must recache the image center and
       ; update the display.
       
-      (define/override (on-scroll event) (recenter) (send this refresh))
-      (define/override (on-size   w h)   (recenter) (send this reshape))
+      (define/override (on-scroll event) (refresh))
+      (define/override (on-size   w h)   (refresh))
 
       ; The on-paint function redraws the canvas.  This involves marshalling
       ; all of the parameters maintained by other GUI elements and calling the
       ; proper render function for the current view mode.
 
       (define/override (on-paint)
-        (let-values (((w h) (send this get-client-size)))
-          (let ((x (get-x))
-                (y (get-y))
-                (e (get-expo))
-                (z (get-zoom))
-                (f (get-flags #f)))
+          (let ((ww (get-ww))
+                (wh (get-wh))
+                (vx (exact->inexact (get-vx)))
+                (vy (exact->inexact (get-vy)))
+                (vw (exact->inexact (get-vw)))
+                (vh (exact->inexact (get-vh)))
+                (e  (get-expo))
+                (z  (get-zoom))
+                (f  (get-flags #f)))
 
-            (lp-render lightprobe f w h x y e z)
+            (printf "Render z=~s ww=~s wh=~s vx=~s vy=~s vw=~s vh=~s~n" z ww wh vx vy vw vh)
+;;          (lp-render lightprobe f vx vy vw vh ww wh e z)
+            (lp-render lightprobe f ww wh vx vy e z)
 
-            (with-gl-context (lambda () (swap-gl-buffers))))))
+            (with-gl-context (lambda () (swap-gl-buffers)))))
 
       ; OpenGL use must wait until the canvas has been shown and the context
       ; created. Do all lightprobe and image state initialization here. Load
@@ -967,8 +1016,7 @@
       (define img (new group-box-panel% [parent top]
                                         [label "Images"]
                                         [stretchable-width #t]))
-
-      ; GUI elements
+      ; Menu bar
 
       (define menus
         (new lp-menu-bar%
@@ -978,7 +1026,9 @@
              [init-file (lambda ()     (send images init-file))]
              [get-flags (lambda (f)    (get-flags f))]
              [goto      (lambda (i)    (send images set-current i))]
-             [notify    (lambda ()     (send canvas reshape))]))
+             [notify    (lambda ()     (send canvas refresh))]))
+
+      ; Main image view
 
       (define canvas
         (new lp-canvas%
@@ -990,28 +1040,34 @@
              [get-zoom  (lambda ()     (send values get-zoom))]
              [get-expo  (lambda ()     (send values get-expo))]
              [get-image (lambda ()     (send images get-current))]
-             [get-flags (lambda (f)    (get-flags f))]
-             [mode      (lambda ()     (send menus mode))]))
+             [get-mode  (lambda ()     (send menus mode))]
+             [get-flags (lambda (f)    (get-flags f))]))
+
+      ; Image list
 
       (define images
         (new image-list%
              [parent img]
-             [notify (lambda () (send canvas reshape))]))
+             [notify (lambda () (send canvas refresh))]))
+
+      ; Exposure and zoom sliders, and show-all toggle
 
       (define values
         (new view-values%
              [parent bot]
-             [notify (lambda () (send canvas reshape))]))
+             [notify (lambda () (send canvas refresh))]))
+
+      ; Gather various settings from around the GUI into a render flag bitmap.
 
       (define (get-flags alpha?)
-        (let ((m (send menus mode)))
-        (bitwise-ior (if (= m 1)            lp-render-globe 0)
-                     (if (= m 2)            lp-render-chart 0)
-                     (if (= m 3)            lp-render-polar 0)
-                     (if (send values all?) lp-render-all   0)
-                     (if (send menus reso?) lp-render-res   0)
-                     (if (send menus grid?) lp-render-grid  0)
-                     (if alpha?             lp-render-alpha 0))))))
+        (let ((m (send menus get-mode)))
+          (bitwise-ior (if (eqv? m 'mode-globe) lp-render-globe 0)
+                       (if (eqv? m 'mode-chart) lp-render-chart 0)
+                       (if (eqv? m 'mode-polar) lp-render-polar 0)
+                       (if (send values all?)   lp-render-all   0)
+                       (if (send menus reso?)   lp-render-res   0)
+                       (if (send menus grid?)   lp-render-grid  0)
+                       (if alpha?               lp-render-alpha 0))))))
   
   ;;----------------------------------------------------------------------------
 
