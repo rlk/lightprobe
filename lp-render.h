@@ -66,8 +66,14 @@ enum
 };
 
 void lp_export(lightprobe *lp, int f, int s, const char *path);
+/*
 void lp_render(lightprobe *lp, int f, int w, int h,
                float x, float y, float e, float z);
+*/
+
+void lp_render(lightprobe *lp, int f, int vx, int vy,
+                                      int vw, int vh,
+                                      int ww, int wh, float e);
 
 /*----------------------------------------------------------------------------*/
 

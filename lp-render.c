@@ -819,16 +819,18 @@ static void draw_sphere(lightprobe *L, int f, int w, int h,
         draw_sphere_grid(L, m);
 }
 
-static void draw_circle(lightprobe *L, int f, int w, int h,
-                        float x, float y, float e, float z)
+static void draw_circle(lightprobe *L, int f, int vx, int vy,
+                                              int vw, int vh,
+                                              int ww, int wh, float e)
 {
     const image *I = L->images + L->select;
 
     if (I->texture)
     {
+/*
         int X = -(I->w * z - w) * x;
         int Y = -(I->h * z - h) * y;
-
+*/
         glDisable(GL_BLEND);
 
         glUseProgram(L->circle.program);
@@ -843,11 +845,20 @@ static void draw_circle(lightprobe *L, int f, int w, int h,
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glClear(GL_COLOR_BUFFER_BIT);
-
+/*
         transform(f, w, h, 0, x, y, z);
 
         glTranslated(X, Y, 0.0);
         glScaled    (z, z, 1.0);
+*/
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glOrtho(vx, vx + ww,
+                    vy + wh, vy, 0, 1);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+        glScaled((GLdouble) vw / I->w,
+                 (GLdouble) vh / I->h, 1.0);
 
         glBegin(GL_QUADS);
         {
@@ -862,6 +873,27 @@ static void draw_circle(lightprobe *L, int f, int w, int h,
 
 //------------------------------------------------------------------------------
 
+void lp_render(lightprobe *L, int f, int vx, int vy,
+                                     int vw, int vh,
+                                     int ww, int wh, float e)
+{
+    glEnable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+
+    gl_size_framebuffer(&L->tmp, ww, wh, 2);
+    gl_size_framebuffer(&L->acc, ww, wh, 4);
+
+    glViewport(0, 0, ww, wh);
+/*
+    if (f & 0xF)
+        draw_sphere(L, f, w, h, x, y, e, z, 0);
+    else
+        draw_circle(L, f, w, h, x, y, e, z);
+*/
+    draw_circle(L, f, vx, vy, vw, vh, ww, wh, e);
+}
+
+/*
 void lp_render(lightprobe *L, int f, int w, int h,
                float x, float y, float e, float z)
 {
@@ -878,6 +910,7 @@ void lp_render(lightprobe *L, int f, int w, int h,
     else
         draw_circle(L, f, w, h, x, y, e, z);
 }
+*/
 
 void lp_export(lightprobe *L, int f, int s, const char *path)
 {

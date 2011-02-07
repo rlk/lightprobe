@@ -97,7 +97,8 @@
 
   (define lp-render
     (gl-ffi "lp_render"
-      (_fun _pointer _int _int _int _float _float _float _float -> _void)))
+      (_fun _pointer _int _int _int _int _int _int _int _float -> _void)))
+;     (_fun _pointer _int _int _int _float _float _float _float -> _void)))
   (define lp-export
     (gl-ffi "lp_export"
       (_fun _pointer _int _int _path -> _void)))
@@ -732,22 +733,22 @@
       ;; Retrieve the current size and offset of the virtual area in pixels,
       ;; taking into account the current zoom level.
 
-      (define (get-vw) (* (get-ww) (get-zoom)))
-      (define (get-vh) (* (get-wh) (get-zoom)))
+      (define (get-vw) (round->exact (* (get-ww) (get-zoom))))
+      (define (get-vh) (round->exact (* (get-wh) (get-zoom))))
 
       (define (get-vx)
         (let ((sx (send this get-scroll-pos   'horizontal))
               (sw (send this get-scroll-range 'horizontal))
               (vw (get-vw))
               (ww (get-ww)))
-          (if (positive? sw) (exact->inexact (* (- vw ww) (/ sx sw))) 0.0)))
+          (if (positive? sw) (round->exact (* (- vw ww) (/ sx sw))) 0)))
 
       (define (get-vy)
         (let ((sy (send this get-scroll-pos   'vertical))
               (sh (send this get-scroll-range 'vertical))
               (vh (get-vh))
               (wh (get-wh)))
-          (if (positive? sh) (exact->inexact (* (- vh wh) (/ sy sh))) 0.0)))
+          (if (positive? sh) (round->exact (* (- vh wh) (/ sy sh))) 0)))
 
       ;; Refresh the contents of the canvas. Normally, this will just enqueue a
       ;; paint event, which will ultimately cause some GL to happen.  However,
@@ -922,17 +923,17 @@
       (define/override (on-paint)
           (let ((ww (get-ww))
                 (wh (get-wh))
-                (vx (exact->inexact (get-vx)))
-                (vy (exact->inexact (get-vy)))
-                (vw (exact->inexact (get-vw)))
-                (vh (exact->inexact (get-vh)))
+                (vx (get-vx))
+                (vy (get-vy))
+                (vw (get-vw))
+                (vh (get-vh))
                 (e  (get-expo))
                 (z  (get-zoom))
                 (f  (get-flags #f)))
 
             (printf "Render z=~s ww=~s wh=~s vx=~s vy=~s vw=~s vh=~s~n" z ww wh vx vy vw vh)
-;;          (lp-render lightprobe f vx vy vw vh ww wh e z)
-            (lp-render lightprobe f ww wh vx vy e z)
+            (lp-render lightprobe f vx vy vw vh ww wh e)
+;;          (lp-render lightprobe f ww wh vx vy e z)
 
             (with-gl-context (lambda () (swap-gl-buffers)))))
 
