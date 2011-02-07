@@ -52,8 +52,9 @@ struct lightprobe
     gl_framebuffer tmp;
     gl_framebuffer acc;
     gl_program     circle;
-    gl_program     scoord;
+    gl_program     sglobe;
     gl_program     schart;
+    gl_program     spolar;
     gl_program     sblend;
     gl_program     sfinal;
     gl_sphere      sphere;
@@ -396,8 +397,9 @@ static void gl_fill_screen(void)
 #include "lp-circle-vs.h"
 #include "lp-circle-fs.h"
 #include "lp-sphere-vs.h"
-#include "lp-scoord-fs.h"
+#include "lp-sglobe-fs.h"
 #include "lp-schart-fs.h"
+#include "lp-spolar-fs.h"
 #include "lp-sblend-fs.h"
 #include "lp-sfinal-fs.h"
 
@@ -408,10 +410,12 @@ static void gl_init(lightprobe *L)
 
     gl_init_program(&L->circle, lp_circle_vs_glsl, lp_circle_vs_glsl_len,
                                 lp_circle_fs_glsl, lp_circle_fs_glsl_len);
-    gl_init_program(&L->scoord, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
-                                lp_scoord_fs_glsl, lp_scoord_fs_glsl_len);
+    gl_init_program(&L->sglobe, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
+                                lp_sglobe_fs_glsl, lp_sglobe_fs_glsl_len);
     gl_init_program(&L->schart, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
                                 lp_schart_fs_glsl, lp_schart_fs_glsl_len);
+    gl_init_program(&L->spolar, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
+                                lp_spolar_fs_glsl, lp_spolar_fs_glsl_len);
     gl_init_program(&L->sblend, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
                                 lp_sblend_fs_glsl, lp_sblend_fs_glsl_len);
     gl_init_program(&L->sfinal, lp_sphere_vs_glsl, lp_sphere_vs_glsl_len,
@@ -431,7 +435,7 @@ static void gl_free(lightprobe *L)
     gl_free_program(&L->sfinal);
     gl_free_program(&L->sblend);
     gl_free_program(&L->schart);
-    gl_free_program(&L->scoord);
+    gl_free_program(&L->sglobe);
     gl_free_program(&L->circle);
 
     gl_free_framebuffer(&L->acc);
@@ -599,10 +603,16 @@ static void proj_globe(int w, int h, float z)
               +0.1         / z, 0.1, 10.0);
 }
 
-static void proj_polar(int w, int h)
+static void proj_polar(int w, int h, float z)
 {
+/*
     glOrtho(-(GLdouble) w / h,
             +(GLdouble) w / h, -1.0, 1.0, -1.0, 1.0);
+*/
+    glOrtho(-(GLdouble) w / h / z,
+            +(GLdouble) w / h / z,
+            -1.0 / z,
+            +1.0 / z, -1.0, 1.0);
 }
 
 static void proj_chart(void)
@@ -626,6 +636,14 @@ static void view_globe(float x, float y)
     glRotated(360 * x - 180, 0, 1, 0);
 }
 
+static void view_polar(int w, int h, float x, float y, float z)
+{
+    float X = -(2.0 * z - 2.0) * x;
+    float Y =  (2.0 * z - 2.0) * y;
+
+    glTranslated(X, Y, 0);
+}
+
 static void view_cube(int i)
 {
     switch (i)
@@ -645,7 +663,7 @@ static void transform(int f, int w, int h, int i, float x, float y, float z)
 
     if      (f & LP_RENDER_GLOBE) proj_globe(w, h, z);
     else if (f & LP_RENDER_CHART) proj_chart( );
-    else if (f & LP_RENDER_POLAR) proj_polar(w, h);
+    else if (f & LP_RENDER_POLAR) proj_polar(w, h, z);
     else if (f & LP_RENDER_CUBE)  proj_cube ( );
     else                          proj_image(w, h);
 
@@ -653,6 +671,7 @@ static void transform(int f, int w, int h, int i, float x, float y, float z)
     glLoadIdentity();
 
     if      (f & LP_RENDER_GLOBE) view_globe(x, y);
+    else if (f & LP_RENDER_POLAR) view_polar(w, h, x, y, z);
     else if (f & LP_RENDER_CUBE)  view_cube (i);
 }
 
@@ -682,24 +701,22 @@ static void draw_sblend(lightprobe *L, image *I, int m)
 
     glBindFramebuffer(GL_FRAMEBUFFER, L->tmp.frame);
 
-    if (m == GL_SPHERE_CHART)
-        P = L->schart.program;
-    else
-        P = L->scoord.program;
+    if      (m == GL_SPHERE_CHART) P = L->schart.program;
+    else if (m == GL_SPHERE_POLAR) P = L->spolar.program;
+    else                           P = L->sglobe.program;
 
     glUseProgram(P);
     GLUNIFORM1F(P, "circle_r", I->values[LP_CIRCLE_RADIUS]);
     GLUNIFORM2F(P, "circle_p", I->values[LP_CIRCLE_X],
                                I->values[LP_CIRCLE_Y]);
-//  GLUNIFORM2I(P, "size", I->w, I->h);
 
     glClear(GL_COLOR_BUFFER_BIT);
     glBlendFunc(GL_ONE, GL_ZERO);
 
-    if (m == GL_SPHERE_CHART)
-        gl_fill_screen();
-    else
+    if (m == GL_SPHERE_GLOBE)
         gl_fill_sphere(&L->sphere, m);
+    else
+        gl_fill_screen();
 
     // Blend the image to the accumulation buffer.
 

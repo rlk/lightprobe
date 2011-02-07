@@ -26,7 +26,7 @@ void main()
     vec2 x = -a - 2.0 * b - c + g + 2.0 * h + i;
     vec2 y = -a - 2.0 * d - g + c + 2.0 * f + i;
 
-    float D = length(vec2(length(x), length(y)));
+    float D = length(vec2(length(x), length(y))) / 4.0;
     vec4  C = texture2DRect(image, e);
 
     gl_FragColor = vec4(C.rgb * C.a / D, C.a / D);

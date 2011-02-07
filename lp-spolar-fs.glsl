@@ -20,7 +20,7 @@ void main()
                   gl_TextureMatrix[0][1].xyz,
                   gl_TextureMatrix[0][2].xyz);
 
-    vec2 s = V.xy * vec2(-3.1415927, 1.5707963);
+    vec2 s = vec2(atan(-V.x, -V.y), 1.5707963 * (1.0 - length(V.xy)));
 
     vec3 n = vec3((sin(s.x) * cos(s.y)),
                   (          -sin(s.y)),

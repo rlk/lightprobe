@@ -543,7 +543,7 @@
                         [callback do-export-cube]
                         [shortcut #\e])
         (new menu-item% [parent file]
-                        [label "Export Polar Map..."]
+                        [label "Export Dome Master..."]
                         [callback do-export-polar]
                         [shortcut #\e]
                         [shortcut-prefix (get-shifted-shortcut-prefix)])

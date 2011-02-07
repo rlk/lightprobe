@@ -25,7 +25,8 @@ OBJS= 	lp-render.o \
 GLSL=	lp-circle-vs.glsl \
 	lp-circle-fs.glsl \
 	lp-sphere-vs.glsl \
-	lp-scoord-fs.glsl \
+	lp-sglobe-fs.glsl \
+	lp-spolar-fs.glsl \
 	lp-schart-fs.glsl \
 	lp-sblend-fs.glsl \
 	lp-sfinal-fs.glsl

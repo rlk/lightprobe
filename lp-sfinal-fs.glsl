@@ -14,8 +14,7 @@ void main()
     vec3 c = p.rgb / p.a;
 
     vec3 t = 1.0 - exp(-expo_n * c);
-//  vec3 r = texture1D(color, p.a).rgb;
-    vec3 r = vec3(p.a);
+    vec3 r = texture1D(color, p.a).rgb;
 
     c = mix(c, t, expo_k);
     c = mix(c, r, reso_k);
