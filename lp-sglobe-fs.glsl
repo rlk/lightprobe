@@ -20,7 +20,7 @@ void main()
                   gl_TextureMatrix[0][1].xyz,
                   gl_TextureMatrix[0][2].xyz);
 
-    vec3 n = normalize(vec3(V.x, -V.y, V.z));
+    vec3 n = normalize(vec3(-V.x, -V.y, -V.z));
 
     gl_FragColor = vec4(unwrap(M * n), 0.0, 0.0);
 }

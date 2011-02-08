@@ -89,16 +89,15 @@
   (define lp-render-globe  1)
   (define lp-render-chart  2)
   (define lp-render-polar  4)
-  (define lp-render-cube   8)
-  (define lp-render-all   16)
-  (define lp-render-res   32)
-  (define lp-render-grid  64)
-  (define lp-render-alpha 256)
+  (define lp-render-all    8)
+  (define lp-render-res   16)
+  (define lp-render-grid  32)
+  (define lp-render-alpha 64)
+  (define lp-render-cube 128)
 
   (define lp-render
     (gl-ffi "lp_render"
       (_fun _pointer _int _int _int _int _int _int _int _float -> _void)))
-;     (_fun _pointer _int _int _int _float _float _float _float -> _void)))
   (define lp-export
     (gl-ffi "lp_export"
       (_fun _pointer _int _int _path -> _void)))
@@ -275,7 +274,7 @@
         (exact->inexact (value->zoom (send zoom get-value))))
 
       (define/public (set-zoom z)
-        (let ((v (round->exact (zoom->value z))))
+        (let ((v (round->exact (zoom->value (max 0.1 z)))))
           (send zoom set-value (max (min v max-zoom) min-zoom))))))
 
   ;;----------------------------------------------------------------------------
@@ -674,20 +673,20 @@
   ;;   Right ... View pan or rotate, depending on mode
   ;; S-Right ... View zoom
 
-  (define (get-click-op event circle?)
+  (define (get-click-op event globe?)
     (let ((type    (send event get-event-type))
           (shift?  (send event get-shift-down))
           (alt?    (send event get-alt-down)))
 
       (case type
-        ((left-down)  (cond (alt?    'circle-size)
-                            (shift?  'sphere-roll)
-                            (circle? 'circle-move)
-                            (else    'sphere-rot)))
-        ((middle-down)               'circle-size)
-        ((right-down) (cond (shift?  'view-zoom)
-                            (circle? 'view-pan)
-                            (else    'view-rot)))
+        ((left-down)  (cond (alt?   'circle-size)
+                            (shift? 'sphere-roll)
+                            (globe? 'sphere-rot)
+                            (else   'circle-move)))
+        ((middle-down)              'circle-size)
+        ((right-down) (cond (shift? 'view-zoom)
+                            (globe? 'view-rot)
+                            (else   'view-pan)))
         (else #f))))
 
   ;; The lp-canvas handles all lightprobe rendering. As creator of the OpenGL
@@ -710,20 +709,6 @@
       (super-new [style '(gl hscroll vscroll no-autoclear)])
 
       (send this init-manual-scrollbars 1000 1000 1000 1000 0 0)
-
-      ;; Compute the virtual scene size for the given mode and zoom.
-
-      ;; (define (get-w)
-      ;;   (let ((ww (* 2 (send this get-width))))
-      ;;     (if (positive? (mode))
-      ;;         (max 1  (round->exact (* (get-zoom) (lp-get-width  lightprobe))))
-      ;;         (max ww (round->exact (* (get-zoom) ww))))))
-
-      ;; (define (get-h)
-      ;;   (let ((hh (* 2 (send this get-height))))
-      ;;     (if (positive? (mode))
-      ;;         (max 1  (round->exact (* (get-zoom) (lp-get-height lightprobe))))
-      ;;         (max hh (round->exact (* (get-zoom) hh))))))
 
       ;; Retrieve the size of the client area in pixels.
 
@@ -765,69 +750,37 @@
         (let ((ww (get-ww))
               (wh (get-wh))
               (vw (get-vw))
-              (vh (get-vh))
-              (z  (get-zoom)))
+              (vh (get-vh)))
 
           (if (or (not (eqv? vw last-vw))
                   (not (eqv? vh last-vh)))
-              (begin
-                (send this set-scroll-page  'horizontal    ww)
-                (send this set-scroll-page  'vertical      wh)
-                (send this set-scroll-range 'horizontal (max 0 (- vw ww)))
-                (send this set-scroll-range 'vertical   (max 0 (- vh wh))))
+
+              (let ((sw (send this get-scroll-range 'horizontal))
+                    (sh (send this get-scroll-range 'vertical))
+                    (sp (send this get-scroll-page  'horizontal))
+                    (sq (send this get-scroll-page  'vertical))
+                    (sx (send this get-scroll-pos   'horizontal))
+                    (sy (send this get-scroll-pos   'vertical))
+                    (nw (max 0 (- vw ww)))
+                    (nh (max 0 (- vh wh))))
+
+                (let* ((cx (/ (+ sx (/ sp  2)) (+ ww sw)))
+                       (cy (/ (+ sy (/ sq  2)) (+ wh sh)))
+                       (nx (- (* cx (+ nw ww)) (/ ww  2)))
+                       (ny (- (* cy (+ nh wh)) (/ wh  2))))
+
+                  (send this set-scroll-range 'horizontal nw)
+                  (send this set-scroll-range 'vertical   nh)
+                  (send this set-scroll-page  'horizontal ww)
+                  (send this set-scroll-page  'vertical   wh)
+                  (send this set-scroll-pos   'horizontal nx)
+                  (send this set-scroll-pos   'vertical   ny)))
               (void))
 
           (set! last-vw vw)
           (set! last-vh vh))
         
         (super refresh))
-
-      ;; The center of the image should not move during zooming.  Thus, the
-      ;; pan must be adjusted as image and zoom parameters change.  To make
-      ;; this possible, we track the current image center in normalized image
-      ;; coordinates, updating it with each reshape and scroll.
-
-      ;; (define center-x 0.5)
-      ;; (define center-y 0.5)
-
-      ;; (define (recenter)
-      ;;   (let* ((iw (get-w))
-      ;;          (ih (get-h))
-      ;;          (ww (send this get-width))
-      ;;          (wh (send this get-height))
-      ;;          (sx (send this get-scroll-pos 'horizontal))
-      ;;          (sy (send this get-scroll-pos 'vertical)))
-
-      ;;     (set! center-x (/ (+ sx (/ ww 2)) iw))
-      ;;     (set! center-y (/ (+ sy (/ wh 2)) ih))))
-
-      ; The reshape function is responsible for handling changes to the shape
-      ; of the canvas.  Beyond changes to the shape of the parent window, this
-      ; may occur in response to additions, deletions, and visibility changes
-      ; among the current set of loaded images.  The primary task is to ensure
-      ; that the scroll bars make sense given the content currently on display.
-      ; With this done, cache the image center and trigger a re-paint.
-
-      ;; (define/public (reshape)
-      ;;   (let* ((iw (get-w))
-      ;;          (ih (get-h))
-      ;;          (ww (send this get-width))
-      ;;          (wh (send this get-height))
-
-      ;;          (nw (max 0 (- iw ww)))
-      ;;          (nh (max 0 (- ih wh)))
-      ;;          (nx (round->exact (max 0 (- (* center-x iw) (/ ww 2)))))
-      ;;          (ny (round->exact (max 0 (- (* center-y ih) (/ wh 2))))))
-
-      ;;     (send this set-scroll-page  'horizontal ww)
-      ;;     (send this set-scroll-range 'horizontal nw)
-      ;;     (send this set-scroll-pos   'horizontal nx)
-      ;;     (send this set-scroll-page  'vertical   wh)
-      ;;     (send this set-scroll-range 'vertical   nh)
-      ;;     (send this set-scroll-pos   'vertical   ny)
-
-      ;;     (recenter)
-      ;;     (refresh)))
 
       ; Left mouse button events configure the current image, while right mouse
       ; events act as shortcuts to panning and zooming. 
@@ -862,7 +815,7 @@
              (set! click-z        cz)
              (set! click-scroll-x sx)
              (set! click-scroll-y sy)
-             (set! click-op (get-click-op event #t)))
+             (set! click-op (get-click-op event (eqv? (get-mode) 'mode-globe))))
 
             ((motion)
              (case click-op
@@ -931,9 +884,7 @@
                 (z  (get-zoom))
                 (f  (get-flags #f)))
 
-            (printf "Render z=~s ww=~s wh=~s vx=~s vy=~s vw=~s vh=~s~n" z ww wh vx vy vw vh)
             (lp-render lightprobe f vx vy vw vh ww wh e)
-;;          (lp-render lightprobe f ww wh vx vy e z)
 
             (with-gl-context (lambda () (swap-gl-buffers)))))
 
@@ -1041,7 +992,7 @@
              [get-zoom  (lambda ()     (send values get-zoom))]
              [get-expo  (lambda ()     (send values get-expo))]
              [get-image (lambda ()     (send images get-current))]
-             [get-mode  (lambda ()     (send menus mode))]
+             [get-mode  (lambda ()     (send menus get-mode))]
              [get-flags (lambda (f)    (get-flags f))]))
 
       ; Image list

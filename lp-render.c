@@ -68,6 +68,18 @@ struct lightprobe
 };
 
 //------------------------------------------------------------------------------
+
+static double min(double a, double b)
+{
+    return (a < b) ? a : b;
+}
+
+static double max(double a, double b)
+{
+    return (a > b) ? a : b;
+}
+
+//------------------------------------------------------------------------------
 // Determine the proper OpenGL interal format, external format, and data type
 // for an image with c channels and b bits per channel.  Punt to c=4 b=8.
 
@@ -595,29 +607,29 @@ void  lp_set_value(lightprobe *L, int k, float v)
 
 //------------------------------------------------------------------------------
 
-static void proj_globe(int w, int h, float z)
+static void proj_image(int vx, int vy, int vw, int vh, int ww, int wh)
 {
-    glFrustum(-0.1 * w / h / z,
-              +0.1 * w / h / z,
-              -0.1         / z,
-              +0.1         / z, 0.1, 10.0);
+    glOrtho(vx, vx + ww, vy + wh, vy, 0, 1);
 }
 
-static void proj_polar(int w, int h, float z)
+static void proj_globe(int vx, int vy, int vw, int vh, int ww, int wh)
 {
-/*
-    glOrtho(-(GLdouble) w / h,
-            +(GLdouble) w / h, -1.0, 1.0, -1.0, 1.0);
-*/
-    glOrtho(-(GLdouble) w / h / z,
-            +(GLdouble) w / h / z,
-            -1.0 / z,
-            +1.0 / z, -1.0, 1.0);
+    double z = (double) ww / (double) vw;
+
+    glFrustum(-0.5 * z * ww / wh,
+              +0.5 * z * ww / wh,
+              -0.5 * z,
+              +0.5 * z, 0.25, 10.0);
 }
 
-static void proj_chart(void)
+static void proj_polar(int vx, int vy, int vw, int vh, int ww, int wh)
 {
-    glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+    glOrtho(vx, vx + ww, vy + wh, vy, 0, 1);
+}
+
+static void proj_chart(int vx, int vy, int vw, int vh, int ww, int wh)
+{
+    glOrtho(vx, vx + ww, vy + wh, vy, 0, 1);
 }
 
 static void proj_cube(void)
@@ -625,23 +637,30 @@ static void proj_cube(void)
     glFrustum(+0.5, -0.5, -0.5, +0.5, 0.5, 5.0);
 }
 
-static void proj_image(int w, int h)
+static void view_globe(int vx, int vy, int vw, int vh, int ww, int wh)
 {
-    glOrtho(0, w, h, 0, 0, 1);
-}
+    double x = (double) vx / max(1, vw - ww);
+    double y = (double) vy / max(1, vh - wh);
 
-static void view_globe(float x, float y)
-{
     glRotated(180 * y -  90, 1, 0, 0);
     glRotated(360 * x - 180, 0, 1, 0);
 }
 
-static void view_polar(int w, int h, float x, float y, float z)
+static void view_chart(int vx, int vy, int vw, int vh, int ww, int wh)
 {
-    float X = -(2.0 * z - 2.0) * x;
-    float Y =  (2.0 * z - 2.0) * y;
+    double k = min(0.5 * vw, vh);
 
-    glTranslated(X, Y, 0);
+    glScaled(2 * k, k, 1);
+}
+
+static void view_polar(int vx, int vy, int vw, int vh, int ww, int wh)
+{
+    double x = 0.5 * vw;
+    double y = 0.5 * vh;
+    double k = min(x, y);
+
+    glTranslated(x, y, 0);
+    glScaled    (k, k, 1);
 }
 
 static void view_cube(int i)
@@ -656,23 +675,34 @@ static void view_cube(int i)
     }
 }
 
-static void transform(int f, int w, int h, int i, float x, float y, float z)
+static void transform(int f, int vx, int vy, int vw, int vh, int ww, int wh)
 {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
 
-    if      (f & LP_RENDER_GLOBE) proj_globe(w, h, z);
-    else if (f & LP_RENDER_CHART) proj_chart( );
-    else if (f & LP_RENDER_POLAR) proj_polar(w, h, z);
-    else if (f & LP_RENDER_CUBE)  proj_cube ( );
-    else                          proj_image(w, h);
+    if      (f & LP_RENDER_GLOBE) proj_globe(vx, vy, vw, vh, ww, wh);
+    else if (f & LP_RENDER_CHART) proj_chart(vx, vy, vw, vh, ww, wh);
+    else if (f & LP_RENDER_POLAR) proj_polar(vx, vy, vw, vh, ww, wh);
+    else if (f & LP_RENDER_CUBE0) proj_cube();
+    else if (f & LP_RENDER_CUBE1) proj_cube();
+    else if (f & LP_RENDER_CUBE2) proj_cube();
+    else if (f & LP_RENDER_CUBE3) proj_cube();
+    else if (f & LP_RENDER_CUBE4) proj_cube();
+    else if (f & LP_RENDER_CUBE5) proj_cube();
+    else                          proj_image(vx, vy, vw, vh, ww, wh);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    if      (f & LP_RENDER_GLOBE) view_globe(x, y);
-    else if (f & LP_RENDER_POLAR) view_polar(w, h, x, y, z);
-    else if (f & LP_RENDER_CUBE)  view_cube (i);
+    if      (f & LP_RENDER_GLOBE) view_globe(vx, vy, vw, vh, ww, wh);
+    else if (f & LP_RENDER_CHART) view_chart(vx, vy, vw, vh, ww, wh);
+    else if (f & LP_RENDER_POLAR) view_polar(vx, vy, vw, vh, ww, wh);
+    else if (f & LP_RENDER_CUBE0) view_cube(0);
+    else if (f & LP_RENDER_CUBE1) view_cube(1);
+    else if (f & LP_RENDER_CUBE2) view_cube(2);
+    else if (f & LP_RENDER_CUBE3) view_cube(3);
+    else if (f & LP_RENDER_CUBE4) view_cube(4);
+    else if (f & LP_RENDER_CUBE5) view_cube(5);
 }
 
 //------------------------------------------------------------------------------
@@ -712,11 +742,7 @@ static void draw_sblend(lightprobe *L, image *I, int m)
 
     glClear(GL_COLOR_BUFFER_BIT);
     glBlendFunc(GL_ONE, GL_ZERO);
-
-    if (m == GL_SPHERE_GLOBE)
-        gl_fill_sphere(&L->sphere, m);
-    else
-        gl_fill_screen();
+    gl_fill_sphere(&L->sphere, m);
 
     // Blend the image to the accumulation buffer.
 
@@ -732,7 +758,7 @@ static void draw_sblend(lightprobe *L, image *I, int m)
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, I->texture);
 
     glBlendFunc(GL_ONE, GL_ONE);
-    gl_fill_screen();
+    gl_fill_sphere(&L->sphere, m);
 }
 
 // Render the accumulation buffer to the output buffer. Divide the RGB color by
@@ -780,8 +806,7 @@ static void draw_sphere_grid(lightprobe *L, int m)
     glColor4d(1.0, 1.0, 1.0, 1.0);
 }
 
-static void draw_sphere(lightprobe *L, int f, int w, int h, 
-                        float x, float y, float e, float z, GLuint frame)
+static void draw_sphere(lightprobe *L, int f, float e, GLuint frame)
 {
     int m = 0;
 
@@ -790,8 +815,6 @@ static void draw_sphere(lightprobe *L, int f, int w, int h,
     else if (f & LP_RENDER_CHART) m = GL_SPHERE_CHART;
 
     glEnable(GL_BLEND);
-
-    transform(f, w, h, 0, x, y, z);
 
     // Initialize the accumulation buffer.
 
@@ -819,18 +842,15 @@ static void draw_sphere(lightprobe *L, int f, int w, int h,
         draw_sphere_grid(L, m);
 }
 
-static void draw_circle(lightprobe *L, int f, int vx, int vy,
-                                              int vw, int vh,
-                                              int ww, int wh, float e)
+static void draw_circle(lightprobe *L, int f, int vw, int vh, float e)
 {
     const image *I = L->images + L->select;
 
     if (I->texture)
     {
-/*
-        int X = -(I->w * z - w) * x;
-        int Y = -(I->h * z - h) * y;
-*/
+        const double k = min((double) vw / I->w,
+                             (double) vh / I->h);
+
         glDisable(GL_BLEND);
 
         glUseProgram(L->circle.program);
@@ -845,29 +865,20 @@ static void draw_circle(lightprobe *L, int f, int vx, int vy,
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glClear(GL_COLOR_BUFFER_BIT);
-/*
-        transform(f, w, h, 0, x, y, z);
 
-        glTranslated(X, Y, 0.0);
-        glScaled    (z, z, 1.0);
-*/
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glOrtho(vx, vx + ww,
-                    vy + wh, vy, 0, 1);
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
-        glScaled((GLdouble) vw / I->w,
-                 (GLdouble) vh / I->h, 1.0);
-
-        glBegin(GL_QUADS);
+        glPushMatrix();
         {
-            glVertex2i(0,    0);
-            glVertex2i(0,    I->h);
-            glVertex2i(I->w, I->h);
-            glVertex2i(I->w, 0);
+            glScaled(k, k, 1);
+            glBegin(GL_QUADS);
+            {
+                glVertex2i(0,    0);
+                glVertex2i(0,    I->h);
+                glVertex2i(I->w, I->h);
+                glVertex2i(I->w, 0);
+            }
+            glEnd();
         }
-        glEnd();
+        glPopMatrix();
     }
 }
 
@@ -884,13 +895,12 @@ void lp_render(lightprobe *L, int f, int vx, int vy,
     gl_size_framebuffer(&L->acc, ww, wh, 4);
 
     glViewport(0, 0, ww, wh);
-/*
-    if (f & 0xF)
-        draw_sphere(L, f, w, h, x, y, e, z, 0);
+    transform(f, vx, vy, vw, vh, ww, wh);
+
+    if (f & 0x7)
+        draw_sphere(L, f, e, 0);
     else
-        draw_circle(L, f, w, h, x, y, e, z);
-*/
-    draw_circle(L, f, vx, vy, vw, vh, ww, wh, e);
+        draw_circle(L, f, vw, vh, e);
 }
 
 /*
@@ -929,7 +939,7 @@ void lp_export(lightprobe *L, int f, int s, const char *path)
     {
         glViewport(0, 0, w, h);
 
-        draw_sphere(L, f, w, h, 0, 0, 0, 0, export.frame);
+//      draw_sphere(L, f, w, h, 0, 0, 0, 0, export.frame);
 
         pixels = gl_copy_framebuffer(&export, a);
     }

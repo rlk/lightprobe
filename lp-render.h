@@ -55,14 +55,19 @@ void  lp_set_value (lightprobe *lp, int k, float v);
 
 enum
 {
-    LP_RENDER_GLOBE =   1,
-    LP_RENDER_CHART =   2,
-    LP_RENDER_POLAR =   4,
-    LP_RENDER_CUBE  =   8,
-    LP_RENDER_ALL   =  16,
-    LP_RENDER_RES   =  32,
-    LP_RENDER_GRID  =  64,
-    LP_RENDER_ALPHA = 256,
+    LP_RENDER_GLOBE =     1,
+    LP_RENDER_CHART =     2,
+    LP_RENDER_POLAR =     4,
+    LP_RENDER_ALL   =     8,
+    LP_RENDER_RES   =    16,
+    LP_RENDER_GRID  =    32,
+    LP_RENDER_ALPHA =    64,
+    LP_RENDER_CUBE0  =  128,
+    LP_RENDER_CUBE1  =  256,
+    LP_RENDER_CUBE2  =  512,
+    LP_RENDER_CUBE3  = 1024,
+    LP_RENDER_CUBE4  = 2048,
+    LP_RENDER_CUBE5  = 4096,
 };
 
 void lp_export(lightprobe *lp, int f, int s, const char *path);

@@ -67,15 +67,15 @@ static void init_vert(int r, int c)
                 const double p =       M_PI * y - M_PI_2;
                 const double t = 2.0 * M_PI * x - M_PI;
 
-                v->globe_pos[0] = (GLfloat) (sin(t) * cos(p));
-                v->globe_pos[1] = (GLfloat) (         sin(p));
-                v->globe_pos[2] = (GLfloat) (cos(t) * cos(p));
+                v->globe_pos[0] =  (GLfloat) (sin(t) * cos(p));
+                v->globe_pos[1] =  (GLfloat) (         sin(p));
+                v->globe_pos[2] =  (GLfloat) (cos(t) * cos(p));
 
-                v->chart_pos[0] = (GLfloat) (1 - x);
-                v->chart_pos[1] = (GLfloat) (    y);
+                v->chart_pos[0] =  (GLfloat) (x);
+                v->chart_pos[1] =  (GLfloat) (y);
 
-                v->polar_pos[0] = (GLfloat) (sin(t) * (2.0 - 2.0 * y));
-                v->polar_pos[1] = (GLfloat) (cos(t) * (2.0 - 2.0 * y));
+                v->polar_pos[0] =  (GLfloat) (sin(t) * (2.0 - 2.0 * y));
+                v->polar_pos[1] = -(GLfloat) (cos(t) * (2.0 - 2.0 * y));
             }
 
         glUnmapBuffer(GL_ARRAY_BUFFER);
