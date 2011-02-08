@@ -677,6 +677,8 @@ static void view_cube(int i)
 
 static void transform(int f, int vx, int vy, int vw, int vh, int ww, int wh)
 {
+    glViewport(0, 0, ww, wh);
+
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
 
@@ -894,7 +896,6 @@ void lp_render(lightprobe *L, int f, int vx, int vy,
     gl_size_framebuffer(&L->tmp, ww, wh, 2);
     gl_size_framebuffer(&L->acc, ww, wh, 4);
 
-    glViewport(0, 0, ww, wh);
     transform(f, vx, vy, vw, vh, ww, wh);
 
     if (f & 0x7)
@@ -902,25 +903,6 @@ void lp_render(lightprobe *L, int f, int vx, int vy,
     else
         draw_circle(L, f, vw, vh, e);
 }
-
-/*
-void lp_render(lightprobe *L, int f, int w, int h,
-               float x, float y, float e, float z)
-{
-    glEnable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
-
-    gl_size_framebuffer(&L->tmp, w, h, 2);
-    gl_size_framebuffer(&L->acc, w, h, 4);
-
-    glViewport(0, 0, w, h);
-
-    if (f & 0xF)
-        draw_sphere(L, f, w, h, x, y, e, z, 0);
-    else
-        draw_circle(L, f, w, h, x, y, e, z);
-}
-*/
 
 void lp_export(lightprobe *L, int f, int s, const char *path)
 {
@@ -931,15 +913,17 @@ void lp_export(lightprobe *L, int f, int s, const char *path)
     gl_framebuffer export;
     void          *pixels;
 
+    glEnable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+
     // Render the sphere and copy the output to a buffer.
 
     gl_size_framebuffer(&L->tmp, w, h, 2);
     gl_size_framebuffer(&L->acc, w, h, 4);
     gl_init_framebuffer(&export, w, h, 3);
     {
-        glViewport(0, 0, w, h);
-
-//      draw_sphere(L, f, w, h, 0, 0, 0, 0, export.frame);
+        transform(f, 0, 0, w, h, w, h);
+        draw_sphere(L, f, 0, export.frame);
 
         pixels = gl_copy_framebuffer(&export, a);
     }

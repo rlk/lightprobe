@@ -495,25 +495,19 @@
 
         ;; File / Export
 
-        ;; (define (do-export func)
-
-        ;;   (let ((get-opts (lambda (name)
-        ;;                     (let ((dialog (new lp-export-dialog% [name name])))
-        ;;                       (send dialog show #t)
-        ;;                       (let ((alpha (send dialog get-alpha))
-        ;;                             (size  (send dialog get-value)))
-        ;;                         (list size alpha))))))
-
-        ;;   (and-let* ((path  (put-file #f root #f #f "tif"))
-        ;;              (opts  (get-opts (path->string path)))
-        ;;              (size  (first  opts)))
-
-        ;;             (begin-busy-cursor)
-        ;;             (func lightprobe path size (get-flags (second opts)))
-        ;;             (end-busy-cursor))))
-
         (define (do-export flag)
-          #t)
+
+          (let ((get-size (lambda (name)
+                            (let ((dialog (new lp-export-dialog% [name name])))
+                              (send dialog show #t)
+                              (send dialog get-value)))))
+
+          (and-let* ((path (put-file #f root #f #f "tif"))
+                     (size (get-size (path->string path))))
+
+                    (begin-busy-cursor)
+                    (lp-export lightprobe (get-flags flag) size path)
+                    (end-busy-cursor))))
 
         (define (do-export-chart control event) (do-export lp-render-chart))
         (define (do-export-polar control event) (do-export lp-render-polar))
@@ -874,15 +868,14 @@
       ; proper render function for the current view mode.
 
       (define/override (on-paint)
-          (let ((ww (get-ww))
-                (wh (get-wh))
+          (let ((f  (get-flags))
                 (vx (get-vx))
                 (vy (get-vy))
                 (vw (get-vw))
                 (vh (get-vh))
-                (e  (get-expo))
-                (z  (get-zoom))
-                (f  (get-flags #f)))
+                (ww (get-ww))
+                (wh (get-wh))
+                (e  (get-expo)))
 
             (lp-render lightprobe f vx vy vw vh ww wh e)
 
@@ -976,7 +969,7 @@
              [save-file (lambda (path) (send images save-file path))]
              [load-file (lambda (path) (send images load-file path))]
              [init-file (lambda ()     (send images init-file))]
-             [get-flags (lambda (f)    (get-flags f))]
+             [get-flags (lambda (mode) (get-export-flags mode))]
              [goto      (lambda (i)    (send images set-current i))]
              [notify    (lambda ()     (send canvas refresh))]))
 
@@ -993,7 +986,7 @@
              [get-expo  (lambda ()     (send values get-expo))]
              [get-image (lambda ()     (send images get-current))]
              [get-mode  (lambda ()     (send menus get-mode))]
-             [get-flags (lambda (f)    (get-flags f))]))
+             [get-flags (lambda ()     (get-render-flags))]))
 
       ; Image list
 
@@ -1011,15 +1004,17 @@
 
       ; Gather various settings from around the GUI into a render flag bitmap.
 
-      (define (get-flags alpha?)
-        (let ((m (send menus get-mode)))
-          (bitwise-ior (if (eqv? m 'mode-globe) lp-render-globe 0)
-                       (if (eqv? m 'mode-chart) lp-render-chart 0)
-                       (if (eqv? m 'mode-polar) lp-render-polar 0)
-                       (if (send values all?)   lp-render-all   0)
-                       (if (send menus reso?)   lp-render-res   0)
-                       (if (send menus grid?)   lp-render-grid  0)
-                       (if alpha?               lp-render-alpha 0))))))
+      (define (get-export-flags mode-flag)
+          (bitwise-ior (if (send values all?) lp-render-all  0)
+                       (if (send menus reso?) lp-render-res  0)
+                       (if (send menus grid?) lp-render-grid 0) mode-flag))
+
+      (define (get-render-flags)
+          (get-export-flags (case (send menus get-mode) 
+                              ((mode-globe) lp-render-globe)
+                              ((mode-chart) lp-render-chart)
+                              ((mode-polar) lp-render-polar)
+                              (else 0))))))
   
   ;;----------------------------------------------------------------------------
 
