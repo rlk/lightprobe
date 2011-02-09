@@ -886,94 +886,100 @@ static void draw_circle(lightprobe *L, int f, int vw, int vh, float e)
 
 //------------------------------------------------------------------------------
 
-void lp_render(lightprobe *L, int f, int vx, int vy,
-                                     int vw, int vh,
-                                     int ww, int wh, float e)
+static void draw(lightprobe *L, int f, int vx, int vy,
+                                       int vw, int vh,
+                                       int ww, int wh, float e, GLuint frame)
 {
-    glEnable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
+//  glEnable (GL_CULL_FACE);
 
     gl_size_framebuffer(&L->tmp, ww, wh, 2);
     gl_size_framebuffer(&L->acc, ww, wh, 4);
 
     transform(f, vx, vy, vw, vh, ww, wh);
 
-    if (f & 0x7)
-        draw_sphere(L, f, e, 0);
+    if (f & 0xF)
+        draw_sphere(L, f, e, frame);
     else
         draw_circle(L, f, vw, vh, e);
 }
 
-void lp_export(lightprobe *L, int f, int s, const char *path)
+static void export6(lightprobe *L, int f, int s, const char *path)
 {
-    const int a = (f & LP_RENDER_ALPHA) ? 4     : 3;
-    const int w = (f & LP_RENDER_CHART) ? s + s : s;
-    const int h = s;
-
     gl_framebuffer export;
-    void          *pixels;
+    void *pixels[6];
 
-    glEnable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
+    // Render each side of the cube map and copy each output to a buffer.
+
+    gl_init_framebuffer(&export, s, s, 3);
+    {
+        draw(L, f | LP_RENDER_CUBE0, 0, 0, s, s, s, s, 0, export.frame);
+        pixels[0] = gl_copy_framebuffer(&export, 3);
+
+        draw(L, f | LP_RENDER_CUBE1, 0, 0, s, s, s, s, 0, export.frame);
+        pixels[1] = gl_copy_framebuffer(&export, 3);
+
+        draw(L, f | LP_RENDER_CUBE2, 0, 0, s, s, s, s, 0, export.frame);
+        pixels[2] = gl_copy_framebuffer(&export, 3);
+
+        draw(L, f | LP_RENDER_CUBE3, 0, 0, s, s, s, s, 0, export.frame);
+        pixels[3] = gl_copy_framebuffer(&export, 3);
+
+        draw(L, f | LP_RENDER_CUBE4, 0, 0, s, s, s, s, 0, export.frame);
+        pixels[4] = gl_copy_framebuffer(&export, 3);
+
+        draw(L, f | LP_RENDER_CUBE5, 0, 0, s, s, s, s, 0, export.frame);
+        pixels[5] = gl_copy_framebuffer(&export, 3);
+    }
+    gl_free_framebuffer(&export);
+
+    // Write the buffers to a file and release them.
+
+    tifwriten(path, s, s, 3, 6, pixels);
+
+    free(pixels[5]);
+    free(pixels[4]);
+    free(pixels[3]);
+    free(pixels[2]);
+    free(pixels[1]);
+    free(pixels[0]);
+}
+
+static void export1(lightprobe *L, int f, int w, int h, const char *path)
+{
+    gl_framebuffer export;
+    void *pixels;
 
     // Render the sphere and copy the output to a buffer.
 
-    gl_size_framebuffer(&L->tmp, w, h, 2);
-    gl_size_framebuffer(&L->acc, w, h, 4);
     gl_init_framebuffer(&export, w, h, 3);
     {
-        transform(f, 0, 0, w, h, w, h);
-        draw_sphere(L, f, 0, export.frame);
-
-        pixels = gl_copy_framebuffer(&export, a);
+        draw(L, f, 0, 0, w, h, w, h, 0, export.frame);
+        pixels = gl_copy_framebuffer(&export, 3);
     }
     gl_free_framebuffer(&export);
 
     // Write the buffer to a file and release it.
 
-    tifwrite(path, w, h, a, pixels);
+    tifwrite(path, w, h, 3, pixels);
 
     free(pixels);
 }
 
 //------------------------------------------------------------------------------
-/*
-void lp_export_cube(lightprobe *L, const char *path, int s, int f)
+
+void lp_render(lightprobe *L, int f, int vx, int vy,
+                                     int vw, int vh,
+                                     int ww, int wh, float e)
 {
-    gl_framebuffer export;
-    void          *pixels[6];
-    int i;
-
-    // Render all six cube map size, copying each output to a buffer.
-
-    glFrontFace(GL_CW);
-    gl_size_framebuffer(&L->acc, s, s);
-    gl_init_framebuffer(&export, s, s);
-    {
-        glViewport(0, 0, s, s);
-
-        for (i = 0; i < 6; ++i)
-        {
-            transform_cube(i);
-            draw_sphere(L, &export, f, GL_SPHERE_GLOBE, 0);
-
-            pixels[i] = gl_copy_framebuffer(&export, f & LP_RENDER_ALPHA);
-        }
-    }
-    gl_free_framebuffer(&export);
-    glFrontFace(GL_CCW);
-
-    // Write the buffers to a file.
-
-    if (f & LP_RENDER_ALPHA)
-        tifwriten(path, s, s, 4, 6, pixels);
-    else
-        tifwriten(path, s, s, 3, 6, pixels);
-
-    // Release the buffers.
-
-    for (i = 0; i < 6; ++i)
-        free(pixels[i]);
+    draw(L, f, vx, vy, vw, vh, ww, wh, e, 0);
 }
-*/
+
+void lp_export(lightprobe *L, int f, int s, const char *path)
+{
+    if      (f & LP_RENDER_CHART) export1(L, f, 2 * s, s, path);
+    else if (f & LP_RENDER_POLAR) export1(L, f,     s, s, path);
+    else if (f & LP_RENDER_CUBE)  export6(L, f,        s, path);
+}
+
 //------------------------------------------------------------------------------

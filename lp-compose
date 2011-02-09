@@ -89,11 +89,10 @@
   (define lp-render-globe  1)
   (define lp-render-chart  2)
   (define lp-render-polar  4)
-  (define lp-render-all    8)
-  (define lp-render-res   16)
-  (define lp-render-grid  32)
-  (define lp-render-alpha 64)
-  (define lp-render-cube 128)
+  (define lp-render-cube   8)
+  (define lp-render-all   16)
+  (define lp-render-res   32)
+  (define lp-render-grid  64)
 
   (define lp-render
     (gl-ffi "lp_render"
@@ -326,7 +325,13 @@
                 (notify))
               (void))))
 
-      (define (do-cnt control event) (void))
+      (define (do-cnt control event)
+        (let ((w (lp-get-width  lightprobe))
+              (h (lp-get-height lightprobe)))
+          (lp-set-circle-x      (/ w 2.0))
+          (lp-set-circle-y      (/ h 2.0))
+          (lp-set-circle-radius (/ h 3.0))
+          (notify)))
 
       ; GUI sub-elements
 
@@ -920,9 +925,6 @@
       (define size-text   (new text-field%      [parent opts]
                                                 [label "Image Size:"]
                                                 [init-value "1024"]))
-      (define alpha-check (new check-box%       [parent opts]
-                                                [label "Alpha Channel"]
-                                                [value #f]))
 
       (define buttons (new horizontal-pane% [parent this]))
 
@@ -935,7 +937,6 @@
                    [style '(border)]
                    [callback (lambda x (set! state #t) (send this show #f))])
 
-      (define/public (get-alpha) (send alpha-check get-value))
       (define/public (get-value)
         (if state (string->number (send size-text get-value)) #f))))
 
