@@ -1,4 +1,5 @@
-#!/Users/rlk/Build/racket/GRacket.app/Contents/MacOS/GRacket
+#!/Applications/Racket/GRacket.app/Contents/MacOS/GRacket
+;#!/Users/rlk/Build/racket/GRacket.app/Contents/MacOS/GRacket
 ;; -*- mode: Scheme; -*-
 
 ;;;; LIGHTPROBE COMPOSER Copyright (C) 2010 Robert Kooima
@@ -979,8 +980,8 @@
       (define canvas
         (new lp-canvas%
              [parent mid]
-             [min-width  800]
-             [min-height 600]
+             [min-width  960]
+             [min-height 540]
              [load-file (lambda (path) (send images load-file path))]
              [set-zoom  (lambda (z)    (send values set-zoom z))]
              [get-zoom  (lambda ()     (send values get-zoom))]

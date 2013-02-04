@@ -972,6 +972,8 @@ void lp_render(lightprobe *L, int f, int vx, int vy,
                                      int vw, int vh,
                                      int ww, int wh, float e)
 {
+    glClear(GL_COLOR_BUFFER_BIT);
+
     draw(L, f, vx, vy, vw, vh, ww, wh, e, 0);
 }
 
